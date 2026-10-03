@@ -2,7 +2,7 @@
 
 IaC-to-GitOps LLM inference platform on AWS EKS. AWS twin of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
-same GitOps contract, same operator, different cloud.
+the same operator, deployed through an ArgoCD app-of-apps, on a different cloud.
 
 **E2E validated 2026-07-13** ([evidence](docs/evidence/e2e-2026-07-13.md)):
 Terraform-managed EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy,
