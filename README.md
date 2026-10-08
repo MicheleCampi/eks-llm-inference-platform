@@ -1,14 +1,21 @@
 # eks-llm-inference-platform
 
-IaC-to-GitOps LLM inference platform on AWS EKS. AWS twin of
+IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
-the same operator, deployed through an ArgoCD app-of-apps, on a different cloud.
+the same operator project, deployed through an ArgoCD app-of-apps, on a
+different cloud. This platform pins the operator at release `v0.4.0`; the GKE
+platform pins `v0.2.1`.
 
 **E2E validated 2026-07-13** ([evidence](docs/evidence/e2e-2026-07-13.md)):
 Terraform-managed EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy,
 [vllm-coldstart-operator](https://github.com/MicheleCampi/vllm-coldstart-operator)
 (Rust, kube-rs) deployed via GitOps, 3 CRDs served. Full build-validate-destroy
 cycle in a single session, ~$1 total cost.
+
+That run predates the pin: the app tracked the operator's `main` (`e93e7c1`),
+whose chart installed image `0.2.1`. The three CRDs were served, but that
+binary reconciles only VllmService. The cycle has not been repeated at
+`v0.4.0`.
 
 ## Architecture
 
@@ -29,7 +36,8 @@ reconciles from Git.
 - **CPU-only nodes; example VLLMService disabled.** This capstone proves the
   IaC->GitOps->operator chain. GPU serving behavior of the same operator is
   measured elsewhere (3x A10 fleet: replacement Ready in 57s, make-before-break,
-  max gap 2.3s) - see the operator repo.
+  max gap 2.3s) - see the operator repo. The per-node reporter is off (the
+  chart default), so nothing writes NodeState on this cluster.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **S3 native state locking** (`use_lockfile`, Terraform >= 1.10), no DynamoDB.
 - **Ephemeral by design**: cluster exists as a reproducible artifact
@@ -44,7 +52,7 @@ reconciles from Git.
 2. **ArgoCD install manifest needs `--server-side`** on current Kubernetes:
    the applicationsets CRD exceeds the 256 KiB annotation limit of
    client-side apply.
-3. **CRD `ignoreDifferences` generalized** after fleet CRDs (ADR-0005/0006)
+3. **CRD `ignoreDifferences` generalized** after fleet CRDs (ADR-0003)
    were added post-GKE: fixed in Git, reconciled by ArgoCD - no kubectl.
 
 ## Bootstrap (one-time, out-of-band)
