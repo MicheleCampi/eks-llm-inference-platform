@@ -8,9 +8,10 @@ module "vpc" {
 module "eks" {
   source = "./modules/eks"
 
-  cluster_name       = var.cluster_name
-  kubernetes_version = "1.36"
-  subnet_ids         = module.vpc.public_subnet_ids
+  cluster_name        = var.cluster_name
+  kubernetes_version  = "1.36"
+  subnet_ids          = module.vpc.public_subnet_ids
+  public_access_cidrs = var.public_access_cidrs
 
   # Free Plan accounts restrict EC2 to free-tier-eligible types only
   # (t3.medium rejected with InvalidParameterCombination at ASG launch).
