@@ -73,3 +73,12 @@ The S3 state bucket is the only resource created outside Terraform:
       https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
     kubectl apply -f gitops/root-app.yaml    # the only manual apply
     terraform destroy                        # stop the meter
+
+## Verify
+
+Every check runs offline of AWS, with no credentials, the same way in CI (`.github/workflows/ci.yml`) and locally:
+
+    bash ci/install-tools.sh   # terraform 1.15.8, gitleaks, actionlint from inference-platform-ci v0.1.0, each SHA-256 verified
+    bash ci/validate.sh        # fmt, init -backend=false, validate, terraform test (mock aws provider), gitleaks on full history, actionlint
+
+Not checked: no misconfiguration scan (trivy) yet, and no plan or apply against a real AWS account.

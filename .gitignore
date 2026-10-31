@@ -4,3 +4,4 @@
 *.tfvars
 !example.tfvars
 crash.log
+.ci-bin/
