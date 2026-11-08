@@ -1,5 +1,24 @@
 # eks-llm-inference-platform
 
+[![ci](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/workflows/ci.yml)
+
+An AWS EKS cluster provisioned with Terraform, where ArgoCD deploys a
+Kubernetes operator from Git and the only manual `kubectl apply` is the root
+Application.
+
+**What it shows**
+
+- **Terraform**: VPC and EKS 1.36 modules, EKS access entries instead of the
+  aws-auth ConfigMap, S3 state with native locking; `terraform test` runs in
+  CI against a mocked AWS provider ([`tests/`](tests/)).
+- **GitOps**: an ArgoCD app-of-apps reconciles the operator's Helm chart from
+  Git ([`gitops/`](gitops/)).
+- **Guardrails**: the public API endpoint is reachable only from declared
+  CIDRs; an empty list or `0.0.0.0/0` fails at plan time, and both cases are
+  tested ([`variables.tf`](variables.tf),
+  [`tests/public_access_cidrs.tftest.hcl`](tests/public_access_cidrs.tftest.hcl)).
+- **Evidence**: one end-to-end run on a real account, recorded below.
+
 IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
 the same operator project, deployed through an ArgoCD app-of-apps, on a
@@ -10,8 +29,7 @@ platform pins `v0.9.0`
 **E2E validated 2026-07-13** ([evidence](docs/evidence/e2e-2026-07-13.md)):
 Terraform-managed EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy,
 [vllm-coldstart-operator](https://github.com/MicheleCampi/vllm-coldstart-operator)
-(Rust, kube-rs) deployed via GitOps, 3 CRDs served. Full build-validate-destroy
-cycle in a single session, ~$1 total cost.
+(Rust, kube-rs) deployed via GitOps, 3 CRDs served.
 
 That run predates the pin: the app tracked the operator's `main` (`e93e7c1`),
 whose chart installed image `0.2.1`. The three CRDs were served, but that
@@ -40,9 +58,12 @@ reconciles from Git.
   max gap 2.3s) - see the operator repo. The per-node reporter is off (the
   chart default), so nothing writes NodeState on this cluster.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
+- **Public API endpoint restricted** with `public_access_cidrs`, set at apply
+  time and never committed. EKS treats an empty list as open to the internet,
+  so a validation rule rejects it, and `0.0.0.0/0` too.
 - **S3 native state locking** (`use_lockfile`, Terraform >= 1.10), no DynamoDB.
-- **Ephemeral by design**: cluster exists as a reproducible artifact
-  (~20 min to recreate), not as an idle bill.
+- **Ephemeral by design**: the cluster exists as a reproducible artifact
+  (recreated with the steps in "Run it"), not as an idle bill.
 
 ## Findings
 
@@ -67,7 +88,7 @@ The S3 state bucket is the only resource created outside Terraform:
 
 ## Run it
 
-    terraform init && terraform apply        # ~15 min to 2 Ready nodes
+    terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
     kubectl create ns argocd
     kubectl apply -n argocd --server-side -f \
