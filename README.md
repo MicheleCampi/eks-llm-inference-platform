@@ -4,7 +4,8 @@ IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
 the same operator project, deployed through an ArgoCD app-of-apps, on a
 different cloud. This platform pins the operator at release `v0.4.0`; the GKE
-platform pins `v0.2.1`.
+platform pins `v0.9.0`
+([`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml)).
 
 **E2E validated 2026-07-13** ([evidence](docs/evidence/e2e-2026-07-13.md)):
 Terraform-managed EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy,
