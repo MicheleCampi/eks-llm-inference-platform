@@ -9,3 +9,11 @@ output "cluster_endpoint" {
 output "cluster_version" {
   value = aws_eks_cluster.this.version
 }
+
+output "oidc_provider_arn" {
+  value = aws_iam_openid_connect_provider.this.arn
+}
+
+output "irsa_role_arns" {
+  value = { for k, r in aws_iam_role.irsa : k => r.arn }
+}

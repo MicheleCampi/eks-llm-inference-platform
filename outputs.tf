@@ -9,3 +9,7 @@ output "cluster_endpoint" {
 output "configure_kubectl" {
   value = "aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name}"
 }
+
+output "irsa_role_arns" {
+  value = module.eks.irsa_role_arns
+}
