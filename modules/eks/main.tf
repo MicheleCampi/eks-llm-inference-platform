@@ -71,6 +71,11 @@ resource "aws_eks_node_group" "default" {
   subnet_ids      = var.subnet_ids
   instance_types  = var.node_instance_types
 
+  launch_template {
+    id      = aws_launch_template.node.id
+    version = aws_launch_template.node.latest_version
+  }
+
   scaling_config {
     desired_size = var.node_desired_size
     min_size     = 0
@@ -82,4 +87,53 @@ resource "aws_eks_node_group" "default" {
     aws_iam_role_policy_attachment.node_cni,
     aws_iam_role_policy_attachment.node_ecr,
   ]
+}
+
+# S4: pods must not borrow the node role. IMDSv2 only, and a hop limit of 1
+# so the token answer never reaches a pod's network namespace.
+resource "aws_launch_template" "node" {
+  name_prefix = "${var.cluster_name}-node-"
+
+  metadata_options {
+    http_endpoint               = "enabled"
+    http_tokens                 = "required"
+    http_put_response_hop_limit = 1
+  }
+}
+
+# S4: a workload that calls AWS gets its own role, bound to one service account.
+resource "aws_iam_openid_connect_provider" "this" {
+  url            = aws_eks_cluster.this.identity[0].oidc[0].issuer
+  client_id_list = ["sts.amazonaws.com"]
+}
+
+locals {
+  oidc_host = replace(aws_eks_cluster.this.identity[0].oidc[0].issuer, "https://", "")
+}
+
+resource "aws_iam_role" "irsa" {
+  for_each = var.irsa_roles
+  name     = "${var.cluster_name}-${each.key}"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Action    = "sts:AssumeRoleWithWebIdentity"
+      Effect    = "Allow"
+      Principal = { Federated = aws_iam_openid_connect_provider.this.arn }
+      Condition = {
+        StringEquals = {
+          "${local.oidc_host}:sub" = "system:serviceaccount:${each.value.namespace}:${each.value.service_account}"
+          "${local.oidc_host}:aud" = "sts.amazonaws.com"
+        }
+      }
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "irsa" {
+  for_each = { for pair in flatten([for k, r in var.irsa_roles : [for arn in r.policy_arns : { key = "${k}/${arn}", role = k, arn = arn }]]) : pair.key => pair }
+
+  role       = aws_iam_role.irsa[each.value.role].name
+  policy_arn = each.value.arn
 }
