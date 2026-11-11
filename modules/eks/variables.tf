@@ -49,3 +49,9 @@ variable "irsa_roles" {
     error_message = "irsa_roles: namespace and service_account must be exact Kubernetes names; wildcards are rejected."
   }
 }
+
+variable "create_spot_service_linked_role" {
+  description = "Create AWSServiceRoleForEC2Spot. Set false where the account already has it."
+  type        = bool
+  default     = true
+}

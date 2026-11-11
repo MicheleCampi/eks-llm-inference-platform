@@ -6,6 +6,12 @@ mock_provider "aws" {
   mock_resource "aws_eks_cluster" {
     defaults = { identity = [{ oidc = [{ issuer = "https://oidc.eks.eu-west-1.amazonaws.com/id/EXAMPLE" }] }] }
   }
+  mock_resource "aws_iam_policy" {
+    defaults = { arn = "arn:aws:iam::123456789012:policy/mock" }
+  }
+  mock_resource "aws_sqs_queue" {
+    defaults = { arn = "arn:aws:sqs:eu-west-1:123456789012:test", url = "https://sqs.eu-west-1.amazonaws.com/123456789012/test" }
+  }
   mock_resource "aws_launch_template" {
     defaults = { id = "lt-0123456789abcdef0", latest_version = 1 }
   }

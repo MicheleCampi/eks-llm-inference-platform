@@ -13,3 +13,11 @@ output "configure_kubectl" {
 output "irsa_role_arns" {
   value = module.eks.irsa_role_arns
 }
+
+output "karpenter_role_arn" {
+  value = module.eks.karpenter_role_arn
+}
+
+output "karpenter_queue_name" {
+  value = module.eks.karpenter_queue_name
+}
