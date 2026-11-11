@@ -17,3 +17,11 @@ output "oidc_provider_arn" {
 output "irsa_role_arns" {
   value = { for k, r in aws_iam_role.irsa : k => r.arn }
 }
+
+output "karpenter_role_arn" {
+  value = aws_iam_role.karpenter.arn
+}
+
+output "karpenter_queue_name" {
+  value = aws_sqs_queue.karpenter.name
+}
