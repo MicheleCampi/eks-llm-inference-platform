@@ -92,7 +92,7 @@ The S3 state bucket is the only resource created outside Terraform:
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
     kubectl create ns argocd
     kubectl apply -n argocd --server-side -f \
-      https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+      https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.3/manifests/install.yaml
     kubectl apply -f gitops/root-app.yaml    # the only manual apply
     terraform destroy                        # stop the meter
 
