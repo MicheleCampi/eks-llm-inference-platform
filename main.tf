@@ -10,7 +10,7 @@ module "eks" {
 
   cluster_name        = var.cluster_name
   kubernetes_version  = "1.36"
-  subnet_ids          = module.vpc.public_subnet_ids
+  subnet_ids          = module.vpc.private_subnet_ids
   public_access_cidrs = var.public_access_cidrs
   irsa_roles          = var.irsa_roles
 

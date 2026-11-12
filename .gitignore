@@ -5,3 +5,4 @@
 !example.tfvars
 crash.log
 .ci-bin/
+modules/*/.terraform.lock.hcl
