@@ -39,7 +39,8 @@ binary reconciles only VllmService. The cycle has not been repeated at
 ## Architecture
 
     Terraform (S3 backend, native lockfile)
-      ├── modules/vpc   VPC, 2 public subnets across 2 AZs, IGW
+      ├── modules/vpc   VPC across 2 AZs: public subnets (IGW, NAT, load balancers),
+      │                 private subnets (nodes), S3 gateway endpoint
       └── modules/eks   EKS 1.36 (API auth mode), managed node group
     ArgoCD (app-of-apps)
       ├── gitops/root-app.yaml            -> watches gitops/apps/
@@ -50,8 +51,15 @@ reconciles from Git.
 
 ## Design decisions
 
-- **No NAT Gateway.** Public subnets only; nodes get public IPs with
-  ingress-closed security groups. Lab cost profile, stated trade-off.
+- **Nodes in private subnets, egress through NAT.** Managed nodes and
+  Karpenter nodes get no public IP; the API endpoint has private access on
+  and public access restricted to `public_access_cidrs`. `nat_mode` is
+  `single` (one NAT, $0.048/h in eu-west-1 from the AWS Pricing API, plus
+  data): a lab trade-off, since losing that AZ cuts egress for both.
+  Production sets `per_az`. VPC endpoints alone are not enough: the Karpenter
+  chart comes from public.ecr.aws. The S3 gateway endpoint (free) keeps ECR
+  layer pulls off the NAT. Tested in `modules/vpc/tests/nat.tftest.hcl`;
+  not yet applied live.
 - **CPU-only nodes; example VLLMService disabled.** This capstone proves the
   IaC->GitOps->operator chain. GPU serving behavior of the same operator is
   measured elsewhere (3x A10 fleet: replacement Ready in 57s, make-before-break,

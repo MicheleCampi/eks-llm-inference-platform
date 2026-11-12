@@ -9,7 +9,7 @@ variable "kubernetes_version" {
 }
 
 variable "subnet_ids" {
-  description = "Subnets for control plane ENIs and nodes."
+  description = "Private subnets for control plane ENIs, managed nodes and Karpenter nodes."
   type        = list(string)
 }
 
