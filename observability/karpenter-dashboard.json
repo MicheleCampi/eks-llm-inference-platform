@@ -1,0 +1,170 @@
+{
+  "title": "Karpenter (eks-llm-inference-platform)",
+  "uid": "karpenter-eks",
+  "schemaVersion": 39,
+  "tags": [
+    "karpenter",
+    "eks"
+  ],
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Nodes created and terminated (10m)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (nodepool, zone) (increase(karpenter_nodes_created_total[10m]))",
+          "legendFormat": "created {{zone}}"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (nodepool) (increase(karpenter_nodes_terminated_total[10m]))",
+          "legendFormat": "terminated"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "NodePool CPU: usage vs limit (cores)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "max by (nodepool) (karpenter_nodepools_usage{resource_type=\"cpu\"})",
+          "legendFormat": "usage {{nodepool}}"
+        },
+        {
+          "refId": "B",
+          "expr": "max by (nodepool) (karpenter_nodepools_limit{resource_type=\"cpu\"})",
+          "legendFormat": "limit {{nodepool}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Pods by phase",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (phase) (karpenter_pods_state)",
+          "legendFormat": "{{phase}}"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Scheduling duration p95",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(karpenter_scheduler_scheduling_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Disruption decisions (10m)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (decision, reason) (increase(karpenter_voluntary_disruption_decisions_total[10m]))",
+          "legendFormat": "{{decision}} {{reason}}"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+# Karpenter alerts. Prometheus format: the same file for promtool (CI) and the
+# Grafana-managed rules of Grafana Cloud, as in vllm-coldstart-operator
+# (ADR-0021). Metric and label names read in the code of Karpenter v1.15.1
+# (core pkg/metrics/labels.go, controllers/metrics/nodepool; aws
+# controllers/interruption): CPU is in cores, resource_type "cpu".
+# No absent(): after the cluster is destroyed it would page forever.
+groups:
+  - name: karpenter
+    rules:
+      - alert: KarpenterNodePoolCpuLimitReached
+        # The NodePool provisioned all the CPU its limits allow: new pods stay
+        # Pending until something is removed or the limit is raised.
+        expr: max by (nodepool) (karpenter_nodepools_usage{resource_type="cpu"}) >= on (nodepool) max by (nodepool) (karpenter_nodepools_limit{resource_type="cpu"})
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterControllerDown
+        # Alloy reaches the Service but the controller does not answer.
+        expr: up{job="karpenter"} == 0
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterSpotInterruption
+        # EC2 announced a Spot interruption or a rebalance: Karpenter drains
+        # and replaces the node; a ticket, not a page.
+        expr: increase(karpenter_interruption_received_messages_total{message_type=~"spot_interrupted|rebalance_recommendation"}[10m]) > 0
+        labels:
+          severity: ticket
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md

@@ -1,0 +1,57 @@
+# promtool test rules observability/karpenter-rules.test.yaml
+rule_files: [karpenter-rules.yaml]
+evaluation_interval: 1m
+tests:
+  # The NodePool reached its 8 CPU limit and stays there: fires after 5 min.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_nodepools_usage{nodepool="default",resource_type="cpu"}'
+        values: '8x20'
+      - series: 'karpenter_nodepools_limit{nodepool="default",resource_type="cpu"}'
+        values: '8x20'
+      - series: 'karpenter_nodepools_usage{nodepool="default",resource_type="memory"}'
+        values: '1e10x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KarpenterNodePoolCpuLimitReached
+        exp_alerts:
+          - exp_labels: {severity: page, nodepool: default}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # 6 of 8 CPU (the 3-replica test): nothing fires.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_nodepools_usage{nodepool="default",resource_type="cpu"}'
+        values: '6x20'
+      - series: 'karpenter_nodepools_limit{nodepool="default",resource_type="cpu"}'
+        values: '8x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KarpenterNodePoolCpuLimitReached
+        exp_alerts: []
+  # The controller stops answering: fires after 5 min; while up, nothing.
+  - interval: 1m
+    input_series:
+      - series: 'up{job="karpenter",instance="10.0.32.10:8080"}'
+        values: '1x4 0x16'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: KarpenterControllerDown
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: KarpenterControllerDown
+        exp_alerts:
+          - exp_labels: {severity: page, job: karpenter, instance: "10.0.32.10:8080"}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # A Spot interruption message arrives; a no_op message does not count.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_interruption_received_messages_total{message_type="spot_interrupted"}'
+        values: '0x5 1x15'
+      - series: 'karpenter_interruption_received_messages_total{message_type="no_op"}'
+        values: '0+1x20'
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: KarpenterSpotInterruption
+        exp_alerts:
+          - exp_labels: {severity: ticket, message_type: spot_interrupted}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
