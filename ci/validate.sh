@@ -14,4 +14,5 @@ echo "7ffeb01f04b5da482ef43087830de00a476098416e3b4576c38239ef1b0bef4b  ci/karpe
 python3 -I ci/karpenter/extract.py ci/karpenter/cloudformation-v1.15.1.yaml modules/eks/karpenter-policies --check
 gitleaks git --no-banner --redact .
 actionlint .github/workflows/*.yml
+bash ci/validate-gitops.sh
 echo "ALL PASS"

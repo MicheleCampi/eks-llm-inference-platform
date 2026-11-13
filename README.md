@@ -44,7 +44,10 @@ binary reconciles only VllmService. The cycle has not been repeated at
       └── modules/eks   EKS 1.36 (API auth mode), managed node group
     ArgoCD (app-of-apps)
       ├── gitops/root-app.yaml            -> watches gitops/apps/
-      └── gitops/apps/…operator.yaml      -> Helm chart from operator repo
+      ├── gitops/apps/…operator.yaml      -> Helm chart from operator repo
+      ├── gitops/apps/external-secrets.yaml -> ESO; gitops/monitoring/ syncs the
+      │                                       Grafana Cloud Secret from AWS Secrets Manager
+      └── gitops/apps/alloy.yaml            -> Karpenter metrics to Grafana Cloud
 
 The only manual `kubectl apply` is the root Application; everything else
 reconciles from Git.
@@ -65,6 +68,15 @@ reconciles from Git.
   measured elsewhere (3x A10 fleet: replacement Ready in 57s, make-before-break,
   max gap 2.3s) - see the operator repo. The per-node reporter is off (the
   chart default), so nothing writes NodeState on this cluster.
+- **Observability as on GKE, keyless.** Alloy scrapes the Karpenter controller
+  (`http-metrics`) and keeps only `up` and the node, scheduling, NodePool,
+  disruption and interruption series, then remote-writes to Grafana Cloud.
+  Its credentials live in AWS Secrets Manager, created empty by Terraform so
+  the value never enters state; External Secrets Operator reads them through
+  EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
+  checks chart pins and SHA-256, manifests against the deployed CRDs, the
+  service account, secret name and metrics port wiring, and the Alloy config
+  with Alloy itself, with negative cases. Not yet applied live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,

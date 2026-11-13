@@ -2,7 +2,7 @@
 # Fetch inference-platform-ci at the tag pinned in ci/platform-ci.env and
 # require the tag to resolve to the pinned commit before running anything
 # from it (so this check cannot come from its own lib.sh). Then install into
-# $CI_BIN, each SHA-256 verified, the three tools eks needs (no Python).
+# $CI_BIN, each SHA-256 verified, the tools eks needs, and PyYAML (hash-locked) for ci/validate-gitops.sh.
 # PLATFORM_CI_ENV replaces ci/platform-ci.env, for testing that a wrong pin
 # fails.
 set -euo pipefail
@@ -15,4 +15,5 @@ git -C "$P" fetch -q --depth 1 https://github.com/MicheleCampi/inference-platfor
 got=$(git -C "$P" rev-parse --verify -q "refs/tags/$PLATFORM_CI_TAG^{commit}")
 if [ "$got" != "$PLATFORM_CI_COMMIT" ]; then echo "inference-platform-ci $PLATFORM_CI_TAG resolves to $got, not the pinned $PLATFORM_CI_COMMIT" >&2; exit 1; fi
 git -C "$P" checkout -q "$PLATFORM_CI_COMMIT"
-bash "$P/install.sh" "$CI_BIN" "$P/tools.lock" terraform gitleaks actionlint
+bash "$P/install.sh" "$CI_BIN" "$P/tools.lock" terraform gitleaks actionlint helm kubeconform yq openapi2jsonschema
+bash "$P/install-python.sh" "$CI_BIN/venv" "$P/requirements.lock"
