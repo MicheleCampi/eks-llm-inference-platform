@@ -76,7 +76,14 @@ reconciles from Git.
   EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
   checks chart pins and SHA-256, manifests against the deployed CRDs, the
   service account, secret name and metrics port wiring, and the Alloy config
-  with Alloy itself, with negative cases. Not yet applied live.
+  with Alloy itself, with negative cases. Three alerts (NodePool CPU limit
+  reached, controller down, Spot interruption) live in
+  `observability/karpenter-rules.yaml`, Prometheus format for promtool and
+  Grafana-managed rules alike, with promtool tests, a runbook
+  (`docs/runbooks/karpenter.md`) and a dashboard
+  (`observability/karpenter-dashboard.json`); metric and label names are read
+  from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
+  drops a metric they use. Not yet applied live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,

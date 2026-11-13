@@ -78,6 +78,14 @@ yq '.alloy.configMap.content' "$W/alloy-values.yaml" > "$W/alloy.alloy"
 ALLOY=(docker run --rm -v "$W:/c:ro" "$ALLOY_IMAGE" validate)
 check alloy-config "${ALLOY[@]}" /c/alloy.alloy
 
+echo "== Karpenter alert rules and dashboard"
+PROM=(docker run --rm --entrypoint promtool -v "$PWD/observability:/r:ro" -w /r "$PROM_IMAGE")
+check rules-check "${PROM[@]}" check rules karpenter-rules.yaml
+check rules-test  "${PROM[@]}" test rules karpenter-rules.test.yaml
+check dashboard-json python3 -m json.tool observability/karpenter-dashboard.json
+check metrics-shipped python3 ci/metrics-shipped.py "$W/alloy.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
+sed -n 1p "$W/metrics-shipped.log" | sed 's/^/  /'
+
 echo "== self-test: each case must be rejected for the reason named"
 yq '(select(.kind=="SecretStore") | .apiVersion) = "external-secrets.io/v1beta1"' gitops/monitoring/grafana-secret.yaml > "$W/neg-v1beta1.yaml"
 expect_reject neg-unserved-api-version "could not find schema for SecretStore" "${KC[@]}" "$W/neg-v1beta1.yaml"
@@ -87,6 +95,13 @@ sed 's/prometheus.scrape "karpenter"/prometheus.scrapez "karpenter"/' "$W/alloy.
 cmp -s "$W/alloy.alloy" "$W/neg-alloy.alloy" && { echo "FAIL neg-alloy-component: mutation changed nothing"; fail=1; }
 expect_reject neg-alloy-component "validation failed" "${ALLOY[@]}" /c/neg-alloy.alloy
 
+# promtool runs as nobody: the copies must be readable.
+mkdir -p "$W/neg-rules" && cp observability/karpenter-rules*.yaml "$W/neg-rules/" && sed -i 's/resource_type="cpu"/resource_type="cpus"/g' "$W/neg-rules/karpenter-rules.yaml" && chmod -R a+rX "$W/neg-rules"
+cmp -s observability/karpenter-rules.yaml "$W/neg-rules/karpenter-rules.yaml" && { echo "FAIL neg-rule-wrong-label: mutation changed nothing"; fail=1; }
+expect_reject neg-rule-wrong-label "FAILED" docker run --rm --entrypoint promtool -v "$W/neg-rules:/r:ro" -w /r "$PROM_IMAGE" test rules karpenter-rules.test.yaml
+sed 's/nodepools_(usage|limit)|//' "$W/alloy.alloy" > "$W/neg-ship.alloy"
+cmp -s "$W/alloy.alloy" "$W/neg-ship.alloy" && { echo "FAIL neg-metric-not-shipped: mutation changed nothing"; fail=1; }
+expect_reject neg-metric-not-shipped "not shipped by alloy: karpenter_nodepools_limit" python3 ci/metrics-shipped.py "$W/neg-ship.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
 expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
 
 echo; if [ "$fail" = 0 ]; then echo "RESULT: gitops checks passed"; else echo "RESULT: gitops checks failed"; fi

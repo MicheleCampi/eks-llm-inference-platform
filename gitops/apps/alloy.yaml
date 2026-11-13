@@ -52,6 +52,11 @@ spec:
                   source_labels = ["__meta_kubernetes_pod_name"]
                   target_label  = "pod"
                 }
+                // A declared job, so the alert rules do not depend on Alloy's default.
+                rule {
+                  target_label = "job"
+                  replacement  = "karpenter"
+                }
               }
 
               prometheus.scrape "karpenter" {
