@@ -20,6 +20,7 @@ retry() { local n=1 d=15; until "$@"; do [ $n -ge 4 ] && return 1; echo "retry $
 echo "== pins match what ArgoCD deploys"
 same pin-eso-chart   "$(yq '.spec.source.targetRevision' gitops/apps/external-secrets.yaml)" "$ESO_CHART_VERSION"
 same pin-alloy-chart "$(yq '.spec.source.targetRevision' gitops/apps/alloy.yaml)" "$ALLOY_CHART_VERSION"
+same pin-kyverno-chart "$(yq '.spec.source.targetRevision' gitops/apps/kyverno.yaml)" "$KYVERNO_CHART_VERSION"
 
 echo "== charts and CRDs at the pinned SHA-256"
 pull() { # name repo version sha256
@@ -28,6 +29,8 @@ pull() { # name repo version sha256
 }
 check chart-eso   retry pull external-secrets https://charts.external-secrets.io "$ESO_CHART_VERSION" "$ESO_CHART_SHA256"
 check chart-alloy retry pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" "$ALLOY_CHART_SHA256"
+check chart-kyverno retry pull kyverno https://kyverno.github.io/kyverno/ "$KYVERNO_CHART_VERSION" "$KYVERNO_CHART_SHA256"
+check kyverno-cli retry sh -c "curl -fsSL '$KYVERNO_CLI_URL' -o '$W/kyv.tgz' && echo '$KYVERNO_CLI_SHA256  $W/kyv.tgz' | sha256sum -c - && tar xzf '$W/kyv.tgz' -C '$W' kyverno"
 check crd-argocd-app retry sh -c "curl -fsSL '$ARGOCD_APP_CRD_URL' -o '$W/argo-raw.yaml' && echo '$ARGOCD_APP_CRD_SHA256  $W/argo-raw.yaml' | sha256sum -c -"
 
 # Every later check needs these inputs: stop here instead of failing in cascade.
@@ -46,7 +49,8 @@ PY
 helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets > "$W/eso-render.yaml" 2>/dev/null
 python3 "$W/served.py" applications.argoproj.io < "$W/argo-raw.yaml" > "$W/crd-argo.yaml"
 python3 "$W/served.py" secretstores.external-secrets.io externalsecrets.external-secrets.io < "$W/eso-render.yaml" > "$W/crd-eso.yaml"
-for g in argoproj.io:argo external-secrets.io:eso; do
+helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
+for g in argoproj.io:argo external-secrets.io:eso policies.kyverno.io:kyv; do
   mkdir -p "$W/schemas/${g%%:*}" && (cd "$W/schemas/${g%%:*}" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-${g##*:}.yaml" >/dev/null)
 done
 KC=(kubeconform -strict -summary -kubernetes-version "$K8S_SCHEMA_VERSION"
@@ -54,7 +58,7 @@ KC=(kubeconform -strict -summary -kubernetes-version "$K8S_SCHEMA_VERSION"
     -schema-location "$W/schemas/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json")
 
 echo "== manifests"
-check manifests "${KC[@]}" gitops/root-app.yaml gitops/apps/*.yaml gitops/monitoring/*.yaml
+check manifests "${KC[@]}" gitops/root-app.yaml gitops/apps/*.yaml gitops/monitoring/*.yaml gitops/policies/*.yaml
 grep -h Summary "$W/manifests.log" | sed 's/^/  /'
 
 echo "== wiring: chart <-> Terraform <-> Alloy"
@@ -86,6 +90,19 @@ check dashboard-json python3 -m json.tool observability/karpenter-dashboard.json
 check metrics-shipped python3 ci/metrics-shipped.py "$W/alloy.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
 sed -n 1p "$W/metrics-shipped.log" | sed 's/^/  /'
 
+echo "== Kyverno policies: the platform complies, rendered with the values ArgoCD deploys"
+KY=("$W/kyverno" apply gitops/policies/)
+yq '.spec.source.helm.valuesObject' gitops/apps/external-secrets.yaml > "$W/eso-values.yaml"
+helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets -f "$W/eso-values.yaml" > "$W/eso-deployed.yaml"
+OV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
+check operator-src retry sh -c "rm -rf '$W/op' && git clone -q --depth 1 --branch '$OV' https://github.com/MicheleCampi/vllm-coldstart-operator.git '$W/op'"
+# example.enabled=false, as the Application's helm parameters set it.
+helm template vcso "$W/op/chart" -n vllm-operator-system --set example.enabled=false > "$W/op-deployed.yaml"
+check platform-complies "${KY[@]}" --resource "$W/eso-deployed.yaml" --resource "$W/alloy-render.yaml" --resource "$W/op-deployed.yaml"
+grep -h '^pass' "$W/platform-complies.log" | sed 's/^/  /'
+check exempt-namespace-ignored "${KY[@]}" --resource ci/fixtures/kyverno/exempt.yaml
+grep -q 'pass: 0, fail: 0' "$W/exempt-namespace-ignored.log" || { echo "FAIL exempt-namespace-ignored: the kube-system pod was evaluated"; fail=1; }
+
 echo "== self-test: each case must be rejected for the reason named"
 yq '(select(.kind=="SecretStore") | .apiVersion) = "external-secrets.io/v1beta1"' gitops/monitoring/grafana-secret.yaml > "$W/neg-v1beta1.yaml"
 expect_reject neg-unserved-api-version "could not find schema for SecretStore" "${KC[@]}" "$W/neg-v1beta1.yaml"
@@ -102,6 +119,10 @@ expect_reject neg-rule-wrong-label "FAILED" docker run --rm --entrypoint promtoo
 sed 's/nodepools_(usage|limit)|//' "$W/alloy.alloy" > "$W/neg-ship.alloy"
 cmp -s "$W/alloy.alloy" "$W/neg-ship.alloy" && { echo "FAIL neg-metric-not-shipped: mutation changed nothing"; fail=1; }
 expect_reject neg-metric-not-shipped "not shipped by alloy: karpenter_nodepools_limit" python3 ci/metrics-shipped.py "$W/neg-ship.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
+expect_reject neg-policy-latest "every image needs a version tag or a digest" "${KY[@]}" --resource ci/fixtures/kyverno/latest.yaml
+expect_reject neg-policy-requests "must declare resources.requests.cpu" "${KY[@]}" --resource ci/fixtures/kyverno/no-requests.yaml
+expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
+expect_reject neg-platform-without-requests "require-requests -> resource external-secrets/Deployment/external-secrets" "${KY[@]}" --resource "$W/eso-render.yaml"
 expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
 
 echo; if [ "$fail" = 0 ]; then echo "RESULT: gitops checks passed"; else echo "RESULT: gitops checks failed"; fi

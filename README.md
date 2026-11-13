@@ -47,7 +47,8 @@ binary reconciles only VllmService. The cycle has not been repeated at
       ├── gitops/apps/…operator.yaml      -> Helm chart from operator repo
       ├── gitops/apps/external-secrets.yaml -> ESO; gitops/monitoring/ syncs the
       │                                       Grafana Cloud Secret from AWS Secrets Manager
-      └── gitops/apps/alloy.yaml            -> Karpenter metrics to Grafana Cloud
+      ├── gitops/apps/alloy.yaml            -> Karpenter metrics to Grafana Cloud
+      └── gitops/apps/kyverno.yaml, policies.yaml -> admission policies (gitops/policies/)
 
 The only manual `kubectl apply` is the root Application; everything else
 reconciles from Git.
@@ -84,6 +85,17 @@ reconciles from Git.
   (`observability/karpenter-dashboard.json`); metric and label names are read
   from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
   drops a metric they use. Not yet applied live.
+- **Admission policies with Kyverno, enforced.** Three `ValidatingPolicy`
+  (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
+  in chart 3.10.0) deny images without a version tag or digest, containers
+  without CPU and memory requests, and privileged containers, for Pods and
+  their controllers. Exempt, with the reason in the policy: `kube-system`,
+  `kyverno`, and `argocd` (installed from the upstream manifest). The platform
+  obeys the same rules: ESO and Alloy get starting requests, to be checked
+  against usage measured live. `ci/validate-gitops.sh` runs the Kyverno CLI
+  (v1.20.0, SHA-256 pinned) on ESO, Alloy and the operator rendered with the
+  values ArgoCD deploys, and on fixtures that must be rejected. Not yet
+  applied live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,

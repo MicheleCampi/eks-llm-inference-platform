@@ -20,6 +20,8 @@ spec:
           type: deployment
           replicas: 1
         alloy:
+          # Starting request, to be checked against usage measured live.
+          resources: {requests: {cpu: 50m, memory: 128Mi}}
           extraEnv:
             - {name: GC_PROM_URL, valueFrom: {secretKeyRef: {name: grafana-cloud-credentials, key: url}}}
             - {name: GC_PROM_USER, valueFrom: {secretKeyRef: {name: grafana-cloud-credentials, key: user}}}
