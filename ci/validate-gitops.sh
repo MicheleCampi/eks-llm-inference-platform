@@ -14,6 +14,9 @@ for f in lib.sh versions.env; do
   . "$CI_BIN/platform-ci/$f" || { echo "no $CI_BIN/platform-ci/$f: run bash ci/install-tools.sh first" >&2; exit 1; }
 done
 
+# Downloads from GitHub fail now and then (timeout on #9): 4 tries, 15/30/60 s apart.
+retry() { local n=1 d=15; until "$@"; do [ $n -ge 4 ] && return 1; echo "retry $n/3 in ${d}s: $1 ${2:-}" >&2; sleep $d; n=$((n+1)); d=$((d*2)); done; }
+
 echo "== pins match what ArgoCD deploys"
 same pin-eso-chart   "$(yq '.spec.source.targetRevision' gitops/apps/external-secrets.yaml)" "$ESO_CHART_VERSION"
 same pin-alloy-chart "$(yq '.spec.source.targetRevision' gitops/apps/alloy.yaml)" "$ALLOY_CHART_VERSION"
@@ -21,11 +24,14 @@ same pin-alloy-chart "$(yq '.spec.source.targetRevision' gitops/apps/alloy.yaml)
 echo "== charts and CRDs at the pinned SHA-256"
 pull() { # name repo version sha256
   helm pull "$1" --repo "$2" --version "$3" -d "$W" >/dev/null &&
-  [ "$(sha256sum "$W/$1-$3.tgz" | cut -d' ' -f1)" = "$4" ]
+  { [ "$(sha256sum "$W/$1-$3.tgz" | cut -d' ' -f1)" = "$4" ] || { echo "sha256 mismatch: $1-$3"; return 1; }; }
 }
-check chart-eso   pull external-secrets https://charts.external-secrets.io "$ESO_CHART_VERSION" "$ESO_CHART_SHA256"
-check chart-alloy pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" "$ALLOY_CHART_SHA256"
-check crd-argocd-app sh -c "curl -fsSL '$ARGOCD_APP_CRD_URL' -o '$W/argo-raw.yaml' && echo '$ARGOCD_APP_CRD_SHA256  $W/argo-raw.yaml' | sha256sum -c -"
+check chart-eso   retry pull external-secrets https://charts.external-secrets.io "$ESO_CHART_VERSION" "$ESO_CHART_SHA256"
+check chart-alloy retry pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" "$ALLOY_CHART_SHA256"
+check crd-argocd-app retry sh -c "curl -fsSL '$ARGOCD_APP_CRD_URL' -o '$W/argo-raw.yaml' && echo '$ARGOCD_APP_CRD_SHA256  $W/argo-raw.yaml' | sha256sum -c -"
+
+# Every later check needs these inputs: stop here instead of failing in cascade.
+[ "$fail" = 0 ] || { echo "RESULT: pinned charts or CRDs unavailable, stopping"; exit 1; }
 
 cat > "$W/served.py" <<'PY'
 import sys, yaml
@@ -66,6 +72,7 @@ same karpenter-metrics-port \
 echo "== alloy: chart renders with our values; configuration validated by alloy"
 yq '.spec.source.helm.values' gitops/apps/alloy.yaml > "$W/alloy-values.yaml"
 check alloy-render sh -c "helm template alloy '$W/alloy-$ALLOY_CHART_VERSION.tgz' -n monitoring -f '$W/alloy-values.yaml' > '$W/alloy-render.yaml'"
+check alloy-render-nonempty test -s "$W/alloy-render.yaml"
 check alloy-render-schema "${KC[@]}" "$W/alloy-render.yaml"
 yq '.alloy.configMap.content' "$W/alloy-values.yaml" > "$W/alloy.alloy"
 ALLOY=(docker run --rm -v "$W:/c:ro" "$ALLOY_IMAGE" validate)
@@ -79,6 +86,8 @@ expect_reject neg-unknown-field "additional properties 'refreshIntervalz' not al
 sed 's/prometheus.scrape "karpenter"/prometheus.scrapez "karpenter"/' "$W/alloy.alloy" > "$W/neg-alloy.alloy"
 cmp -s "$W/alloy.alloy" "$W/neg-alloy.alloy" && { echo "FAIL neg-alloy-component: mutation changed nothing"; fail=1; }
 expect_reject neg-alloy-component "validation failed" "${ALLOY[@]}" /c/neg-alloy.alloy
+
+expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
 
 echo; if [ "$fail" = 0 ]; then echo "RESULT: gitops checks passed"; else echo "RESULT: gitops checks failed"; fi
 exit "$fail"
