@@ -1,0 +1,28 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: disallow-privileged
+  annotations:
+    policies.kyverno.io/description: No privileged containers.
+spec:
+  validationActions: [Deny]
+  autogen:
+    podControllers:
+      controllers: [deployments, daemonsets, statefulsets, jobs, cronjobs]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    # kube-system (EKS add-ons, Karpenter), kyverno (the engine itself) and
+    # argocd (installed out of band from the upstream manifest) are exempt.
+    namespaceSelector:
+      matchExpressions:
+        - {key: kubernetes.io/metadata.name, operator: NotIn, values: [kube-system, kyverno, argocd]}
+  variables:
+    - name: containers
+      expression: "object.spec.containers + (has(object.spec.initContainers) ? object.spec.initContainers : [])"
+  validations:
+    - expression: "variables.containers.all(c, !has(c.securityContext) || !has(c.securityContext.privileged) || c.securityContext.privileged == false)"
+      message: "privileged containers are not allowed"

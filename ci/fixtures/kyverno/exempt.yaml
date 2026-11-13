@@ -1,0 +1,10 @@
+# Fixture for ci/validate-gitops.sh (Kyverno policies).
+apiVersion: v1
+kind: Namespace
+metadata: {name: kube-system, labels: {kubernetes.io/metadata.name: kube-system}}
+---
+apiVersion: v1
+kind: Pod
+metadata: {name: sys-priv, namespace: kube-system}
+spec:
+  containers: [{name: c, image: "nginx:latest", securityContext: {privileged: true}}]

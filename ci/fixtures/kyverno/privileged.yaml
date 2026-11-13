@@ -1,0 +1,6 @@
+# Fixture for ci/validate-gitops.sh (Kyverno policies).
+apiVersion: v1
+kind: Pod
+metadata: {name: bad-privileged, namespace: team-demo}
+spec:
+  containers: [{name: c, image: "nginx:1.27.3", securityContext: {privileged: true}, resources: {requests: {cpu: 10m, memory: 16Mi}}}]
