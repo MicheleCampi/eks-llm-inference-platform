@@ -1,0 +1,85 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: alloy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://grafana.github.io/helm-charts
+    chart: alloy
+    targetRevision: 1.10.0
+    helm:
+      releaseName: alloy
+      values: |
+        controller:
+          type: deployment
+          replicas: 1
+        alloy:
+          extraEnv:
+            - {name: GC_PROM_URL, valueFrom: {secretKeyRef: {name: grafana-cloud-credentials, key: url}}}
+            - {name: GC_PROM_USER, valueFrom: {secretKeyRef: {name: grafana-cloud-credentials, key: user}}}
+            - {name: GC_PROM_TOKEN, valueFrom: {secretKeyRef: {name: grafana-cloud-credentials, key: token}}}
+          configMap:
+            content: |
+              // Karpenter controller metrics: Service kube-system/karpenter,
+              // port http-metrics (8080, chart 1.15.1). Only up and the series
+              // the dashboard and alert use are kept (free plan bound); names
+              // from the Karpenter v1.15.1 metrics reference.
+              discovery.kubernetes "karpenter" {
+                role = "endpoints"
+                namespaces {
+                  names = ["kube-system"]
+                }
+                selectors {
+                  role  = "service"
+                  label = "app.kubernetes.io/name=karpenter"
+                }
+              }
+
+              discovery.relabel "karpenter" {
+                targets = discovery.kubernetes.karpenter.targets
+                rule {
+                  source_labels = ["__meta_kubernetes_endpoint_port_name"]
+                  regex         = "http-metrics"
+                  action        = "keep"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_pod_name"]
+                  target_label  = "pod"
+                }
+              }
+
+              prometheus.scrape "karpenter" {
+                targets    = discovery.relabel.karpenter.output
+                forward_to = [prometheus.relabel.karpenter.receiver]
+              }
+
+              prometheus.relabel "karpenter" {
+                forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+                rule {
+                  source_labels = ["__name__"]
+                  regex         = "up|karpenter_(nodeclaims_(created|terminated|disrupted)_total|nodes_(created|terminated)_total|nodes_allocatable|pods_state|pods_startup_duration_seconds.*|scheduler_scheduling_duration_seconds.*|nodepools_(usage|limit)|voluntary_disruption_decisions_total|interruption_.*)"
+                  action        = "keep"
+                }
+              }
+
+              prometheus.remote_write "grafana_cloud" {
+                endpoint {
+                  url = sys.env("GC_PROM_URL")
+                  basic_auth {
+                    username = sys.env("GC_PROM_USER")
+                    password = sys.env("GC_PROM_TOKEN")
+                  }
+                }
+              }
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated: {prune: true, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]
