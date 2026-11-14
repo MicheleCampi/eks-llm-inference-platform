@@ -8,11 +8,14 @@ billable exists only between step 2 and step 8.
 
 - A-016 confirmed for the release being applied (v2.1.0).
 - `bash ci/validate.sh` is ALL PASS on the tag; the PR plan shows only creates.
-- Start time noted; hard stop at 2 hours, destroy included.
+- Start time noted; target 2 hours, forced destroy at 3 hours from apply (A-016).
 
 ## 1. Check out the release
 
     git checkout v2.1.0
+
+Read this runbook from main: commits after v2.1.0 change documentation only,
+so the code applied is the same.
 
 ## 2. Apply
 
@@ -54,11 +57,16 @@ masked), what passed, what did not.
 
 ## 8. Destroy
 
-Remove workloads first, so Karpenter deletes its own nodes before the cluster
-goes away:
+Root app and karpenter-nodes sync with selfHeal: a deleted NodePool would be
+recreated within seconds. Stop automated sync first (the root app is applied
+by hand, nothing reverts the patch), then delete the NodePool: Karpenter
+drains and terminates its nodes before the cluster goes away.
 
     kubectl delete -f tests/live/inflate.yaml
-    kubectl get nodeclaims           # wait until empty
+    kubectl -n argocd patch application "$(yq .metadata.name gitops/root-app.yaml)" --type merge -p '{"spec":{"syncPolicy":null}}'
+    kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":null}}'
+    kubectl delete nodepool default
+    kubectl get nodeclaims -w        # wait until empty
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
     terraform destroy
 
