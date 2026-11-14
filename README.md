@@ -209,7 +209,7 @@ create the role it assumes), then its ARN is set as a repo variable:
     kubectl create ns argocd
     kubectl apply -n argocd --server-side -f \
       https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.3/manifests/install.yaml
-    git checkout v2.0.0                      # the release the cluster runs
+    git checkout v2.1.0                      # the release the cluster runs
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter
