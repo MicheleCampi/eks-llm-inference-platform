@@ -38,7 +38,7 @@ resource "aws_iam_role_policy" "grafana_state" {
     Version = "2012-10-17"
     Statement = [
       { Sid = "ListStateBucket", Effect = "Allow", Action = "s3:ListBucket", Resource = "arn:${local.partition}:s3:::${local.state_bucket}" },
-      { Sid = "ReadState", Effect = "Allow", Action = "s3:GetObject", Resource = local.grafana_state_arn },
+      { Sid = "ReadState", Effect = "Allow", Action = "s3:GetObject", Resource = [local.grafana_state_arn, "${local.grafana_state_arn}.tflock"] },
       # plan writes only the lock file; apply also writes the state.
       { Sid = "WriteState", Effect = "Allow", Action = ["s3:PutObject", "s3:DeleteObject"], Resource = each.key == "apply" ? [local.grafana_state_arn, "${local.grafana_state_arn}.tflock"] : ["${local.grafana_state_arn}.tflock"] },
     ]

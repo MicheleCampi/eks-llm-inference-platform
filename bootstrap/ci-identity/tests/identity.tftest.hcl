@@ -112,3 +112,11 @@ run "grafana_roles_reach_only_grafana_state" {
     error_message = "Grafana roles may use only S3 on the bucket and the Grafana state and lock."
   }
 }
+
+run "grafana_roles_read_the_lock" {
+  command = plan
+  assert {
+    condition     = alltrue([for k in ["plan", "apply"] : contains(flatten([for s in jsondecode(aws_iam_role_policy.grafana_state[k].policy).Statement : s.Resource if s.Sid == "ReadState"]), "${local.grafana_state_arn}.tflock")])
+    error_message = "Each Grafana role must read its .tflock: the S3 lockfile reads it before releasing it."
+  }
+}
