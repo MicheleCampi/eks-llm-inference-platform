@@ -1,0 +1,13 @@
+# Accepted trivy findings: each one with its reason and an expiry, after which
+# trivy reports it again and the reason must be checked anew.
+
+# AWS-0039 (customer-managed KMS key for secrets): EKS 1.28+ encrypts all
+# Kubernetes API data with envelope encryption by default, with an AWS owned
+# key at no extra cost (EKS user guide, envelope-encryption). A customer-managed
+# key is an option for compliance regimes that require it, at KMS prices.
+AWS-0039 exp:2027-05-14
+
+# AWS-0040 (public API endpoint): private access is on, public access is
+# limited to var.public_access_cidrs, and tests/public_access_cidrs.tftest.hcl
+# rejects 0.0.0.0/0. A private-only endpoint needs a VPN or bastion (fixed cost).
+AWS-0040 exp:2027-05-14

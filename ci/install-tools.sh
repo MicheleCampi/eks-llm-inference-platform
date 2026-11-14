@@ -17,5 +17,5 @@ retry git -C "$P" fetch -q --depth 1 https://github.com/MicheleCampi/inference-p
 got=$(git -C "$P" rev-parse --verify -q "refs/tags/$PLATFORM_CI_TAG^{commit}")
 if [ "$got" != "$PLATFORM_CI_COMMIT" ]; then echo "inference-platform-ci $PLATFORM_CI_TAG resolves to $got, not the pinned $PLATFORM_CI_COMMIT" >&2; exit 1; fi
 git -C "$P" checkout -q "$PLATFORM_CI_COMMIT"
-retry bash "$P/install.sh" "$CI_BIN" "$P/tools.lock" terraform gitleaks actionlint helm kubeconform yq openapi2jsonschema
+retry bash "$P/install.sh" "$CI_BIN" "$P/tools.lock" terraform gitleaks actionlint helm kubeconform yq openapi2jsonschema trivy
 retry bash "$P/install-python.sh" "$CI_BIN/venv" "$P/requirements.lock"
