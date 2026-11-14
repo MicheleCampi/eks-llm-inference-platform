@@ -206,10 +206,9 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    kubectl create ns argocd
-    kubectl apply -n argocd --server-side -f \
-      https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.3/manifests/install.yaml
     git checkout v2.1.0                      # the release the cluster runs
+    kubectl create ns argocd
+    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter
