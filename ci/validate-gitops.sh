@@ -120,6 +120,16 @@ check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py 
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
 # ci/fixtures: deliberately bad manifests for negative cases; ci/karpenter: upstream reference copy. Neither is deployed.
 check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-files ci/karpenter/cloudformation-v1.15.1.yaml .
+# Charts as Argo CD deploys them: app values, no helm test hooks (Argo CD v3.4.3 skips them).
+mkdir -p "$W/charts" "$W/neg-chart"
+yq '.spec.source.helm.valuesObject' gitops/apps/kyverno.yaml > "$W/kyv-values.yaml"
+yq '.spec.source.helm.valuesObject' gitops/apps/karpenter.yaml > "$W/karp-values.yaml"
+helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests -f "$W/kyv-values.yaml" > "$W/charts/kyverno.yaml"
+check karpenter-deployed-render sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system -f '$W/karp-values.yaml' > '$W/charts/karpenter.yaml' 2>/dev/null"
+cp "$W/eso-deployed.yaml" "$W/charts/eso.yaml"; cp "$W/alloy-render.yaml" "$W/charts/alloy.yaml"; cp "$W/ksm-render.yaml" "$W/charts/ksm.yaml"; cp "$W/op-deployed.yaml" "$W/charts/operator.yaml"
+TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile ci/trivyignore-charts.yaml)
+check trivy-charts "${TRIVY_CH[@]}" "$W/charts"
+helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests > "$W/neg-chart/kyverno.yaml"
 echo "== AppProject platform: every cluster-scoped kind its apps create is whitelisted"
 OPV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
 check operator-render sh -c "rm -rf '$W/op' && git clone -q --depth 1 -b '$OPV' https://github.com/MicheleCampi/vllm-coldstart-operator '$W/op' && helm template vcso '$W/op/chart' -n vllm-operator-system --set example.enabled=false --include-crds > '$W/op-render.yaml'"
@@ -138,6 +148,7 @@ expect_reject neg-project-crd-kind "karpenter.sh/NodePool" "${CI_BIN:-$PWD/.ci-b
 expect_reject neg-project-kind-not-allowed "scheduling.k8s.io/PriorityClass" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py gitops/apps/projects.yaml platform "${PK[@]}" "$W/neg-pc.yaml"
 mkdir -p "$W/neg-tf" && printf 'resource "aws_subnet" "p" {\n  vpc_id                  = "vpc-1"\n  cidr_block              = "10.0.0.0/24"\n  map_public_ip_on_launch = true\n}\n' > "$W/neg-tf/main.tf"
 expect_reject neg-trivy-public-ip "AWS-0164" "${TRIVY[@]}" "$W/neg-tf"
+expect_reject neg-trivy-chart-no-podsecuritycontext "KSV-0118" "${TRIVY_CH[@]}" "$W/neg-chart"
 grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
 expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-nodeclass.yaml"
 sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"

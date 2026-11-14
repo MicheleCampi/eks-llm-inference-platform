@@ -15,6 +15,14 @@ spec:
     targetRevision: 3.10.0
     helm:
       releaseName: kyverno
+      valuesObject:
+        admissionController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        backgroundController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        cleanupController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        reportsController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        crds: {migration: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}}
+        webhooksCleanup: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        upgrade: {legacyPolicyCheck: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}}
   destination:
     server: https://kubernetes.default.svc
     namespace: kyverno

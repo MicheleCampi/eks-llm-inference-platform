@@ -1,0 +1,24 @@
+# Accepted trivy findings on the charts as Argo CD deploys them
+# (ci/validate-gitops.sh, check trivy-charts). Paths are relative to the
+# render directory. Each entry says why the component needs it.
+misconfigurations:
+  - id: KSV-0109
+    paths: [alloy.yaml]
+    statement: "False positive: ConfigMap alloy has password = sys.env(\"GC_PROM_TOKEN\"), an env var name, not a value."
+    expired_at: 2027-05-14
+  - id: KSV-0041
+    paths: [eso.yaml]
+    statement: "External Secrets writes the Secrets it syncs; its cert-controller manages the webhook TLS Secret."
+    expired_at: 2027-05-14
+  - id: KSV-0114
+    paths: [eso.yaml, kyverno.yaml]
+    statement: "ESO cert-controller and Kyverno admission and cleanup controllers manage their own webhook configurations."
+    expired_at: 2027-05-14
+  - id: KSV-0046
+    paths: [kyverno.yaml]
+    statement: "kyverno:migrate-resources is used by the post-upgrade hook Job that migrates Kyverno resources."
+    expired_at: 2027-05-14
+  - id: KSV-0056
+    paths: [kyverno.yaml, operator.yaml]
+    statement: "Kyverno background controller (generate rules); vllm-coldstart-operator chart grants services/endpoints, scope to review in the operator repo."
+    expired_at: 2027-05-14
