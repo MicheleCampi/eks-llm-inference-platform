@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: team-defaults
+  namespace: team-demo
+spec:
+  limits:
+    - type: Container
+      # A safety net for pods that declare nothing; default CPU limit = max.cpu,
+      # so a larger request without its own limit is not rejected.
+      defaultRequest: {cpu: 100m, memory: 128Mi}
+      default: {cpu: "2", memory: 512Mi}
+      max: {cpu: "2", memory: 4Gi}

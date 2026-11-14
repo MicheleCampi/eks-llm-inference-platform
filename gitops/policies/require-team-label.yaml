@@ -1,0 +1,25 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-team-label
+  annotations:
+    policies.kyverno.io/description: Every team-* namespace carries the team and cost-centre labels, and the team matches the namespace name, so showback attributes every request to the right team.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [namespaces]
+  matchConditions:
+    - name: team-namespace
+      expression: "object.metadata.name.startsWith('team-')"
+  variables:
+    - name: labels
+      expression: "has(object.metadata.labels) ? object.metadata.labels : {}"
+  validations:
+    - expression: "'platform.michelecampi.dev/team' in variables.labels && 'platform.michelecampi.dev/cost-center' in variables.labels"
+      message: "team-* namespaces must carry platform.michelecampi.dev/team and platform.michelecampi.dev/cost-center"
+    - expression: "variables.labels[?'platform.michelecampi.dev/team'].orValue('') == object.metadata.name.substring(5)"
+      message: "platform.michelecampi.dev/team must equal the namespace name without the team- prefix"

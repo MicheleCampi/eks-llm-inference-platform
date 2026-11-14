@@ -1,0 +1,45 @@
+# Team demo: the team deploys only operator kinds into team-demo; the platform
+# owns namespace, quota and RBAC (tenant-demo). ci/check-tenancy.py enforces it.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: team-demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: "Team demo: inference workloads in team-demo only"
+  sourceRepos: [https://github.com/MicheleCampi/eks-llm-inference-platform]
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: team-demo}
+  namespaceResourceWhitelist:
+    - {group: inference.michelecampi.dev, kind: VllmService}
+    - {group: inference.michelecampi.dev, kind: FleetService}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tenant-demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: tenancy
+  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: main, path: gitops/tenants/demo}
+  destination: {server: https://kubernetes.default.svc, namespace: team-demo}
+  syncPolicy: {automated: {prune: true, selfHeal: true}}
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: team-demo
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+  finalizers: [resources-finalizer.argocd.argoproj.io]
+spec:
+  project: team-demo
+  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: main, path: gitops/teams/demo, directory: {exclude: README.md}}
+  destination: {server: https://kubernetes.default.svc, namespace: team-demo}
+  syncPolicy: {automated: {prune: true, selfHeal: true}}

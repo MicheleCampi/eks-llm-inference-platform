@@ -137,8 +137,8 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum by (label_team) (kube_pod_container_resource_requests{resource=\"cpu\"} * on (namespace, pod) group_left (label_team) kube_pod_labels)",
-          "legendFormat": "{{label_team}}"
+          "expr": "sum by (label_platform_michelecampi_dev_team) (kube_pod_container_resource_requests{resource=\"cpu\"} * on (namespace) group_left (label_platform_michelecampi_dev_team) kube_namespace_labels)",
+          "legendFormat": "{{label_platform_michelecampi_dev_team}}"
         }
       ],
       "id": 4

@@ -145,7 +145,7 @@ spec:
                 forward_to = [prometheus.remote_write.grafana_cloud.receiver]
                 rule {
                   source_labels = ["__name__"]
-                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_pod_labels|kube_node_labels"
+                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_namespace_labels|kube_node_labels"
                   action        = "keep"
                 }
                 rule {

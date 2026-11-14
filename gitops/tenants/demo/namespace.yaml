@@ -1,0 +1,11 @@
+# Team identity and cost owner on the namespace (showback joins usage on it).
+# Pod Security: warn and audit at restricted, as on GKE.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: team-demo
+  labels:
+    platform.michelecampi.dev/team: demo
+    platform.michelecampi.dev/cost-center: demo
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted

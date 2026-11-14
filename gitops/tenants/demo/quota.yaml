@@ -1,0 +1,15 @@
+# The team's spending cap inside the cluster: 2 CPU and 4Gi requested at most,
+# a quarter of the NodePool's 8 CPU (gitops/karpenter/nodepool.yaml).
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: team-demo
+  namespace: team-demo
+spec:
+  hard:
+    requests.cpu: "2"
+    requests.memory: 4Gi
+    limits.cpu: "4"
+    limits.memory: 8Gi
+    pods: "10"
+    count/vllmservices.inference.michelecampi.dev: "2"

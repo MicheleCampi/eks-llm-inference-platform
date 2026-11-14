@@ -1,0 +1,23 @@
+# Tenancy: the platform, not the team, owns each team's namespace, quota,
+# defaults, network policy and identity. Same project as GKE.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tenancy
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Team namespaces, quotas and team identity (RBAC), owned by the platform
+  sourceRepos: [https://github.com/MicheleCampi/eks-llm-inference-platform]
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: "team-*"}
+  clusterResourceWhitelist:
+    - {group: "", kind: Namespace}
+  namespaceResourceWhitelist:
+    - {group: "", kind: ResourceQuota}
+    - {group: "", kind: LimitRange}
+    - {group: networking.k8s.io, kind: NetworkPolicy}
+    - {group: "", kind: ServiceAccount}
+    - {group: rbac.authorization.k8s.io, kind: Role}
+    - {group: rbac.authorization.k8s.io, kind: RoleBinding}
