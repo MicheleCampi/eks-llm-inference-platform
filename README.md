@@ -206,7 +206,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.2.0                      # the release the cluster runs
+    git checkout v2.2.1                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
@@ -249,7 +249,10 @@ Known and accepted for this project; each would be closed before production.
 - kustomize is pinned by SHA-256 only: its releases are not signed.
 - Alloy's ClusterRole is the chart's rules minus secrets: to be narrowed to
   the resources its pipeline actually reads.
-- The Grafana notification policy replaces the whole tree: acceptable only
-  because the Grafana Cloud stack is dedicated to this project.
+- The Grafana Cloud stack is shared with vllm-coldstart-operator. A notification
+  policy replaces the whole tree, so this repository is its only owner, as
+  code: severity page goes to platform-oncall-email, the rest to
+  platform-email. A larger organisation would give each team its own stack or
+  a central alerting repository.
 - Rule changes are approved by the hash of the rules file, not by a diff
   against Grafana: the documented `/api/convert/` commands are load and sync.
