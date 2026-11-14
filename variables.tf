@@ -40,3 +40,15 @@ variable "irsa_roles" {
     error_message = "irsa_roles: namespace and service_account must be exact Kubernetes names; wildcards are rejected."
   }
 }
+
+variable "budget_monthly_limit_usd" {
+  description = "Monthly cost budget for spend tagged Project (USD)."
+  type        = number
+  default     = 5
+}
+
+variable "budget_alert_emails" {
+  description = "Budget alert recipients; set in terraform.tfvars, not committed."
+  type        = list(string)
+  default     = []
+}

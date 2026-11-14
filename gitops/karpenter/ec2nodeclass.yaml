@@ -4,6 +4,12 @@ metadata:
   name: default
 spec:
   role: llm-inference-node-role
+  # Cost allocation: the Project tag of Terraform default_tags (providers.tf), so
+  # the AWS Budget filtered on it sees node spend. ci/check-cost-tags.py keeps them equal.
+  tags:
+    Project: eks-llm-inference-platform
+    ManagedBy: karpenter
+    Owner: michele
   amiSelectorTerms:
     - alias: al2023@latest
   subnetSelectorTerms:

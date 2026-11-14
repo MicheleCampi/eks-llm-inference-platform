@@ -65,3 +65,14 @@ run "pinned_and_ha" {
     error_message = "metrics-server requests must be declared"
   }
 }
+
+run "node_cost_tags" {
+  command = apply
+  module {
+    source = "./modules/eks"
+  }
+  assert {
+    condition     = toset([for t in aws_launch_template.node.tag_specifications : t.resource_type]) == toset(["instance", "volume", "network-interface"])
+    error_message = "node launch template must tag instances, volumes and ENIs for cost allocation"
+  }
+}
