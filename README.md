@@ -96,6 +96,19 @@ reconciles from Git.
   (v1.20.0, SHA-256 pinned) on ESO, Alloy and the operator rendered with the
   values ArgoCD deploys, and on fixtures that must be rejected. Not yet
   applied live.
+- **Right-sizing as a continuous FinOps loop.** metrics-server runs as an EKS
+  managed add-on, pinned (v0.9.1-eksbuild.1), with 2 replicas across zones and
+  a PodDisruptionBudget declared, so `kubectl top` and the HPA survive a node
+  removed by Karpenter consolidation. kube-state-metrics (chart 9.0.1) exports
+  only pod requests and pod and node labels; Alloy scrapes cAdvisor on the
+  kubelet with TLS verified against the cluster CA and `nodes/metrics` only,
+  and keeps six series families, a deliberate bound for the Grafana Cloud free
+  plan. `observability/rightsizing-dashboard.json` shows requests against usage
+  and idle CPU per namespace, CPU requests per `team` label (showback) and
+  nodes by capacity type and zone. The node group image, the Pod Identity
+  agent and metrics-server are pinned and asserted by `terraform test`, so a
+  change of AWS default cannot alter the cluster silently. Starting requests,
+  label names and kubelet TLS are checked live; not yet applied live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,
