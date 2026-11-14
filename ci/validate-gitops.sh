@@ -126,6 +126,8 @@ check operator-render sh -c "rm -rf '$W/op' && git clone -q --depth 1 -b '$OPV' 
 PK=("$W/eso-render.yaml" "$W/kyverno-render.yaml" "$W/karpenter-render.yaml" "$W/alloy-render.yaml" "$W/ksm-render.yaml" "$W/op-render.yaml" gitops/karpenter/*.yaml gitops/policies/*.yaml gitops/monitoring/*.yaml gitops/apps/*.yaml)
 check project-kinds "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py gitops/apps/projects.yaml platform "${PK[@]}"
 check release-pin "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml gitops/apps/*.yaml
+# The live test workload must pass the same admission policies, or the live session finds out with the meter running.
+check live-workload-complies "${KY[@]}" --resource tests/live/inflate.yaml
 echo "== self-test: each case must be rejected for the reason named"
 sed 's/targetRevision: v[0-9.]*/targetRevision: main/' gitops/apps/policies.yaml > "$W/neg-pin.yaml"
 expect_reject neg-release-pin-main "not a release tag" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml "$W/neg-pin.yaml"
