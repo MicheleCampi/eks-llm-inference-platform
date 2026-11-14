@@ -57,4 +57,26 @@ sim denied  iam:CreatePolicyVersion "$BOUNDARY"
 sim denied  iam:DeleteRolePermissionsBoundary "$R"
 sim denied  iam:CreateUser "$P:user/sim"
 sim denied  secretsmanager:GetSecretValue "arn:aws:secretsmanager:eu-west-1:$A:secret:llm-inference/sim"
+# Service-linked roles AWS creates through the caller (CloudTrail, attempt 1).
+sim allowed iam:CreateServiceLinkedRole "$P:role/aws-service-role/eks.amazonaws.com/AWSServiceRoleForAmazonEKS"
+# Outside IAM: every action must exist (AWS Service Reference), so a wrong name
+# cannot pass through PowerUserAccess NotAction, and must be allowed.
+ACTIONS=ci/apply-role-actions.txt
+REF=$(mktemp)
+for s in $(grep -v '^#' "$ACTIONS" | cut -d: -f1 | sort -u); do
+  curl -fsS "https://servicereference.us-east-1.amazonaws.com/v1/$s/$s.json" | jq -r --arg s "$s" '.Actions[].Name | "\($s):\(.)"'
+done | LC_ALL=C sort -u > "$REF"
+while read -r act; do
+  grep -qx "$act" "$REF" || { echo "FAIL  not an IAM action: $act"; fail=1; continue; }
+  sim allowed "$act" "*"
+done < <(grep -v '^#' "$ACTIONS" | grep .)
+# Coverage: every action CloudTrail recorded in attempt 1 is simulated.
+ct2iam() { case $1 in budgets:CreateBudget) echo budgets:ModifyBudget ;; budgets:DescribeBudget|budgets:DescribeNotificationsForBudget) echo budgets:ViewBudget ;; *) echo "$1" ;; esac; }
+while read -r ev; do
+  a=$(ct2iam "$ev")
+  case $a in
+    iam:*) grep -q "${a#iam:}" ci/simulate-apply-role.sh || { echo "FAIL  not simulated: $a"; fail=1; } ;;
+    *) grep -qx "$a" "$ACTIONS" || { echo "FAIL  not simulated: $a"; fail=1; } ;;
+  esac
+done < ci/evidence/apply-attempt1-cloudtrail-actions.txt
 [ $fail -eq 0 ] && echo "PREFLIGHT PASS" || { echo "PREFLIGHT FAIL"; exit 1; }
