@@ -12,7 +12,7 @@ mock_provider "aws" {
 run "trust_is_this_repo_pull_requests" {
   command = plan
   assert {
-    condition     = jsondecode(aws_iam_role.plan.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:pull_request"
+    condition     = jsondecode(aws_iam_role.plan.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == ["repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:pull_request", "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:environment:live-plan"]
     error_message = "trust must be this repo's pull requests, immutable subject"
   }
   assert {
@@ -43,5 +43,45 @@ run "writes_only_the_lock" {
     condition = alltrue([for s in jsondecode(aws_iam_role_policy.state.policy).Statement :
     endswith(s.Resource, ".tflock") if s.Effect == "Allow" && contains(flatten([s.Action]), "s3:PutObject")])
     error_message = "the only object the role may write is the state lock file"
+  }
+}
+
+run "apply_trust_is_live_environment_only" {
+  command = plan
+  assert {
+    condition     = jsondecode(aws_iam_role.apply.assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:environment:live" && !strcontains(aws_iam_role.apply.assume_role_policy, "*")
+    error_message = "apply trust must be the live environment of this repo, immutable subject, no wildcard"
+  }
+}
+
+run "apply_creates_roles_only_with_boundary" {
+  command = plan
+  assert {
+    condition     = one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.Condition.StringEquals["iam:PermissionsBoundary"] if s.Sid == "CreateStackRolesOnlyWithBoundary"]) == local.boundary_arn
+    error_message = "CreateRole and PutRolePolicy must require the eks-llm-boundary"
+  }
+}
+
+run "boundary_iam_is_karpenter_only" {
+  command = plan
+  assert {
+    condition     = toset(flatten([for s in jsondecode(aws_iam_policy.boundary.policy).Statement : s.Action if s.Effect == "Allow" && can(s.Action)])) == toset(concat(local.karpenter_iam, ["iam:PassRole"]))
+    error_message = "the boundary may grant in IAM only Karpenter's instance profile actions and PassRole"
+  }
+}
+
+run "apply_cannot_touch_ci_identity" {
+  command = plan
+  assert {
+    condition     = contains(one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.Resource if s.Sid == "DenyCiIdentityAndBoundary"]), local.boundary_arn)
+    error_message = "apply role must be denied on the CI roles and on the boundary"
+  }
+}
+
+run "apply_state_is_only_its_own_key" {
+  command = plan
+  assert {
+    condition     = length(one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.NotResource if s.Sid == "DenyOtherStateObjects"])) == 2 && !strcontains(aws_iam_role_policy.apply_iam.policy, "s3:prefix")
+    error_message = "apply role may read and write only this stack's state key and lock"
   }
 }

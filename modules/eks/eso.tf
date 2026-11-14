@@ -9,7 +9,8 @@ resource "aws_secretsmanager_secret" "grafana_cloud" {
 }
 
 resource "aws_iam_role" "eso" {
-  name = "${var.cluster_name}-eso"
+  name                 = "${var.cluster_name}-eso"
+  permissions_boundary = var.permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

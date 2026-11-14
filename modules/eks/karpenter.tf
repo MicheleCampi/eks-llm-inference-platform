@@ -25,7 +25,8 @@ resource "aws_iam_policy" "karpenter" {
 # The controller's role is assumed through EKS Pod Identity, bound below to
 # exactly one service account: kube-system/karpenter. No role ARN in git.
 resource "aws_iam_role" "karpenter" {
-  name = "${var.cluster_name}-karpenter"
+  name                 = "${var.cluster_name}-karpenter"
+  permissions_boundary = var.permissions_boundary_arn
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{

@@ -33,6 +33,8 @@ locals {
   # Immutable subject (owner and repo ids, read from the GitHub API on 14/11):
   # a repo deleted and recreated under the same name does not inherit trust.
   plan_subject = "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:pull_request"
+  # The plan job of apply.yml and destroy.yml runs in environment live-plan.
+  plan_env_subject = "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:environment:live-plan"
 }
 
 # Shared GitHub OIDC provider, owned by aws-ecs-delivery-platform: read, not managed.
@@ -55,7 +57,7 @@ resource "aws_iam_role" "plan" {
       Condition = {
         StringEquals = {
           "token.actions.githubusercontent.com:aud" = "sts.amazonaws.com"
-          "token.actions.githubusercontent.com:sub" = local.plan_subject
+          "token.actions.githubusercontent.com:sub" = [local.plan_subject, local.plan_env_subject]
         }
       }
     }]

@@ -21,10 +21,11 @@ mock_provider "aws" {
 }
 
 variables {
-  cluster_name        = "test"
-  kubernetes_version  = "1.36"
-  subnet_ids          = ["subnet-a", "subnet-b"]
-  public_access_cidrs = ["203.0.113.0/24"]
+  permissions_boundary_arn = "arn:aws:iam::123456789012:policy/eks-llm-boundary"
+  cluster_name             = "test"
+  kubernetes_version       = "1.36"
+  subnet_ids               = ["subnet-a", "subnet-b"]
+  public_access_cidrs      = ["203.0.113.0/24"]
 }
 
 run "nodes_block_imds_from_pods" {
@@ -70,5 +71,18 @@ run "trust_is_one_service_account" {
   assert {
     condition     = length(aws_iam_role_policy_attachment.irsa) == 1
     error_message = "one policy attached"
+  }
+}
+
+run "every_role_has_the_boundary" {
+  command = plan
+  module { source = "./modules/eks" }
+  variables { irsa_roles = { reader = { namespace = "team-a", service_account = "reader", policy_arns = [] } } }
+  assert {
+    condition = alltrue([for b in concat(
+      [aws_iam_role.cluster.permissions_boundary, aws_iam_role.node.permissions_boundary, aws_iam_role.karpenter.permissions_boundary, aws_iam_role.eso.permissions_boundary],
+      [for r in values(aws_iam_role.irsa) : r.permissions_boundary]
+    ) : b == var.permissions_boundary_arn]) && length(aws_iam_role.irsa) > 0
+    error_message = "every IAM role of the module must carry the eks-llm-boundary"
   }
 }

@@ -55,3 +55,8 @@ variable "create_spot_service_linked_role" {
   type        = bool
   default     = true
 }
+
+variable "permissions_boundary_arn" {
+  description = "Permissions boundary every IAM role of this module carries (eks-llm-boundary, bootstrap/ci-identity)."
+  type        = string
+}
