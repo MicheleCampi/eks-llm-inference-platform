@@ -116,7 +116,10 @@ sed -n 1p "$W/addon-config.log" | sed 's/^/  /'
 echo "== tenancy: each team confined to its namespace, capped by a platform-owned quota"
 check tenancy "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-tenancy.py .
 sed -n '$p' "$W/tenancy.log" | sed 's/^/  /'
+check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py gitops/karpenter/ec2nodeclass.yaml
 echo "== self-test: each case must be rejected for the reason named"
+grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
+expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-nodeclass.yaml"
 sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"
 expect_reject neg-appproject-unknown-field "descriptionTypo" "${KC[@]}" "$W/neg-project.yaml"
 rm -rf "$W/neg-ten" && mkdir -p "$W/neg-ten" && cp -r gitops "$W/neg-ten/"

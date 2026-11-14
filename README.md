@@ -124,6 +124,17 @@ reconciles from Git.
   configuration lives in `modules/eks/addons/*.json` and `ci/addon-config.py`
   validates it against the AWS schema of the pinned version. Not yet applied
   live.
+- **AWS Budget as code, at no charge.** `modules/budget` declares a monthly
+  cost budget (5 USD by default) that counts only spend tagged `Project`, with
+  alerts on actual spend past 80% and forecast spend past 100% when
+  `budget_alert_emails` is set (in `terraform.tfvars`, not committed). It has
+  no actions and no reports, which AWS Budgets does not charge for; `Project`
+  is activated as a cost allocation tag. The tags come from one map
+  (`local.tags` in `providers.tf`) and reach the Karpenter nodes (EC2NodeClass
+  `spec.tags`, compared by `ci/check-cost-tags.py`) and the node group's
+  instances, volumes and ENIs (launch template `tag_specifications`).
+  `terraform test` asserts the filter, the alerts and the node tags. Not yet
+  applied live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,

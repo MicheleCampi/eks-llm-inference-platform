@@ -103,7 +103,19 @@ resource "aws_launch_template" "node" {
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
   }
+
+  # Cost allocation: default_tags do not reach instances launched from a
+  # template, so the node group's instances, volumes and ENIs get them here.
+  dynamic "tag_specifications" {
+    for_each = ["instance", "volume", "network-interface"]
+    content {
+      resource_type = tag_specifications.value
+      tags          = data.aws_default_tags.current.tags
+    }
+  }
 }
+
+data "aws_default_tags" "current" {}
 
 # S4: a workload that calls AWS gets its own role, bound to one service account.
 resource "aws_iam_openid_connect_provider" "this" {
