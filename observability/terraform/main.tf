@@ -42,9 +42,42 @@ resource "grafana_contact_point" "email" {
   }
 }
 
-# Replaces the whole policy tree: acceptable only because the Grafana Cloud
-# stack is dedicated to this project (README, Production gaps).
+variable "oncall_email" {
+  description = "Address of platform-oncall-email, which receives severity page."
+  type        = string
+  sensitive   = true
+}
+
+# platform-oncall-email was created by hand for vllm-coldstart-operator
+# (its hack/gpu-session/gke-l4/CHECKLIST.md: severity page goes there). It is
+# imported by name, not recreated, so the shared stack has one owner as code.
+import {
+  to = grafana_contact_point.oncall
+  id = "platform-oncall-email"
+}
+
+resource "grafana_contact_point" "oncall" {
+  name = "platform-oncall-email"
+  email {
+    addresses    = [var.oncall_email]
+    single_email = false
+  }
+}
+
+# The Grafana Cloud stack is shared with vllm-coldstart-operator. A
+# notification policy replaces the whole tree, so this repository is its only
+# owner: route by severity, the label every rule of both projects carries.
+# page -> platform-oncall-email; everything else -> platform-email.
 resource "grafana_notification_policy" "this" {
   contact_point = grafana_contact_point.email.name
   group_by      = ["alertname", "nodepool"]
+
+  policy {
+    matcher {
+      label = "severity"
+      match = "="
+      value = "page"
+    }
+    contact_point = grafana_contact_point.oncall.name
+  }
 }

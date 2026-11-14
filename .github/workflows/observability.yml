@@ -46,6 +46,7 @@ jobs:
           GRAFANA_URL: ${{ vars.GRAFANA_URL }}
           GRAFANA_AUTH: ${{ secrets.GRAFANA_TOKEN }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_oncall_email: ${{ secrets.ONCALL_EMAIL }}
         run: |
           export PATH="$PWD/.ci-bin:$PATH"
           mimirtool rules lint --dry-run "$RULES"
@@ -96,6 +97,7 @@ jobs:
           GRAFANA_URL: ${{ vars.GRAFANA_URL }}
           GRAFANA_AUTH: ${{ secrets.GRAFANA_TOKEN }}
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          TF_VAR_oncall_email: ${{ secrets.ONCALL_EMAIL }}
           PROM_DS_UID: ${{ vars.GRAFANA_PROM_DATASOURCE_UID }}
           APPROVED: ${{ needs.plan.outputs.changes }}
         run: |
