@@ -117,6 +117,8 @@ echo "== tenancy: each team confined to its namespace, capped by a platform-owne
 check tenancy "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-tenancy.py .
 sed -n '$p' "$W/tenancy.log" | sed 's/^/  /'
 check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py gitops/karpenter/ec2nodeclass.yaml
+check iam-boundary "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-iam-boundary.py modules
+mkdir -p "$W/neg-iam" && printf 'resource "aws_iam_role" "x" {\n  name = "llm-inference-x"\n}\n' > "$W/neg-iam/main.tf"
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
 # ci/fixtures: deliberately bad manifests for negative cases; ci/karpenter: upstream reference copy. Neither is deployed.
 check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-dirs gitops/argocd/upstream --skip-files ci/karpenter/cloudformation-v1.15.1.yaml .
@@ -153,6 +155,7 @@ mkdir -p "$W/neg-tf" && printf 'resource "aws_subnet" "p" {\n  vpc_id           
 expect_reject neg-trivy-public-ip "AWS-0164" "${TRIVY[@]}" "$W/neg-tf"
 expect_reject neg-trivy-chart-no-podsecuritycontext "KSV-0118" "${TRIVY_CH[@]}" "$W/neg-chart"
 expect_reject neg-argocd-upstream-tampered "FAILED" sh -c "echo '$ARGOCD_INSTALL_SHA256  $W/argocd-tampered.yaml' | sha256sum -c -"
+expect_reject neg-iam-role-without-boundary "without permissions_boundary" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-iam-boundary.py "$W/neg-iam"
 grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
 expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-nodeclass.yaml"
 sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"

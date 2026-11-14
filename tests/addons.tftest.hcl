@@ -31,10 +31,11 @@ mock_provider "aws" {
 }
 
 variables {
-  cluster_name        = "test"
-  kubernetes_version  = "1.36"
-  subnet_ids          = ["subnet-a", "subnet-b"]
-  public_access_cidrs = ["203.0.113.0/24"]
+  permissions_boundary_arn = "arn:aws:iam::123456789012:policy/eks-llm-boundary"
+  cluster_name             = "test"
+  kubernetes_version       = "1.36"
+  subnet_ids               = ["subnet-a", "subnet-b"]
+  public_access_cidrs      = ["203.0.113.0/24"]
 }
 
 run "pinned_and_ha" {

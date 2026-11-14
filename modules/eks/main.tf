@@ -1,5 +1,6 @@
 resource "aws_iam_role" "cluster" {
-  name = "${var.cluster_name}-cluster-role"
+  name                 = "${var.cluster_name}-cluster-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -37,7 +38,8 @@ resource "aws_eks_cluster" "this" {
 }
 
 resource "aws_iam_role" "node" {
-  name = "${var.cluster_name}-node-role"
+  name                 = "${var.cluster_name}-node-role"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -128,8 +130,9 @@ locals {
 }
 
 resource "aws_iam_role" "irsa" {
-  for_each = var.irsa_roles
-  name     = "${var.cluster_name}-${each.key}"
+  for_each             = var.irsa_roles
+  name                 = "${var.cluster_name}-${each.key}"
+  permissions_boundary = var.permissions_boundary_arn
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"

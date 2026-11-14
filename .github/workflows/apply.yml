@@ -1,0 +1,94 @@
+# apply: plan with the read-only role (environment live-plan), then, after
+# approval in environment live, re-plan with the apply role and apply only if
+# the plan's resource_changes hash equals the one shown for approval. No plan
+# file is shared: on a public repo an artifact would expose variable values.
+name: apply
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: live-cluster
+  cancel-in-progress: false
+jobs:
+  plan:
+    name: plan (read-only role)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    environment: live-plan
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (inference-platform-ci, pinned in ci/platform-ci.env)
+        run: bash ci/install-tools.sh
+      - name: GitHub OIDC token for AWS STS
+        run: |
+          curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$RUNNER_TEMP/web-identity-token"
+          test -s "$RUNNER_TEMP/web-identity-token"
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/web-identity-token" >> "$GITHUB_ENV"
+      - name: terraform plan
+        id: plan
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_PLAN_ROLE_ARN }}
+          AWS_ROLE_SESSION_NAME: gha-apply-plan-${{ github.run_id }}
+          AWS_REGION: eu-west-1
+          TF_VAR_public_access_cidrs: ${{ secrets.PUBLIC_ACCESS_CIDRS }}
+        run: |
+          export PATH="$PWD/.ci-bin:$PATH"
+          terraform init -input=false -no-color
+          terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
+          sha=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          echo "changes=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Plan to approve (apply, ${GITHUB_REF_NAME})"
+            echo "resource_changes sha256: \`$sha\`"
+            echo '```'
+            terraform show -no-color tfplan | grep -E '^Plan:|^  # .* will be|must be replaced' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+  apply:
+    name: apply the approved plan
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    environment: live
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (inference-platform-ci, pinned in ci/platform-ci.env)
+        run: bash ci/install-tools.sh
+      - name: GitHub OIDC token for AWS STS
+        run: |
+          curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$RUNNER_TEMP/web-identity-token"
+          test -s "$RUNNER_TEMP/web-identity-token"
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/web-identity-token" >> "$GITHUB_ENV"
+      - name: terraform apply, only if the plan is the approved one
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_APPLY_ROLE_ARN }}
+          AWS_ROLE_SESSION_NAME: gha-apply-${{ github.run_id }}
+          AWS_REGION: eu-west-1
+          TF_VAR_public_access_cidrs: ${{ secrets.PUBLIC_ACCESS_CIDRS }}
+          APPROVED: ${{ needs.plan.outputs.changes }}
+        run: |
+          export PATH="$PWD/.ci-bin:$PATH"
+          terraform init -input=false -no-color
+          terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
+          got=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          if [ "$got" != "$APPROVED" ]; then
+            echo "::error::plan changed since approval ($got, approved $APPROVED): nothing applied"
+            exit 1
+          fi
+          terraform apply -input=false -no-color -lock-timeout=60s tfplan
