@@ -59,6 +59,10 @@ jobs:
           AWS_ROLE_ARN: ${{ vars.AWS_PLAN_ROLE_ARN }}
           AWS_ROLE_SESSION_NAME: gha-plan-${{ github.run_id }}
           AWS_REGION: eu-west-1
+          # The real allowed CIDR is personal and never committed. 192.0.2.0/24 is
+          # TEST-NET-1 (RFC 5737, documentation only, not routable): it passes the
+          # variable's validation and keeps the plan diff faithful; a plan applies nothing.
+          TF_VAR_public_access_cidrs: '["192.0.2.0/24"]'
         run: |
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
