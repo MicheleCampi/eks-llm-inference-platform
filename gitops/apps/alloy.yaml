@@ -19,6 +19,8 @@ spec:
         controller:
           type: deployment
           replicas: 1
+          volumes:
+            extra: [{name: alloy-storage, emptyDir: {}}]
         alloy:
           # Starting request, to be checked against usage measured live.
           resources: {requests: {cpu: 50m, memory: 128Mi}}
@@ -164,6 +166,29 @@ spec:
                   }
                 }
               }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          mounts:
+            extra: [{name: alloy-storage, mountPath: /tmp/alloy}]
+        global:
+          podSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 473
+            runAsGroup: 473
+            fsGroup: 473
+            seccompProfile:
+              type: RuntimeDefault
+        configReloader:
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+        rbac:
+          create: false
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
