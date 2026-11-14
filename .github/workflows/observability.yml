@@ -1,0 +1,117 @@
+# observability: Grafana Cloud as code. Plan with the Viewer token (environment
+# grafana-plan), then, after approval in environment grafana, re-plan with the
+# apply token and apply only if the approved hash still matches. The hash covers
+# the Terraform resource_changes and the alert rules file, which mimirtool
+# syncs (Grafana /api/convert/, namespace karpenter-rules only).
+name: observability
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: grafana
+  cancel-in-progress: false
+env:
+  RULES: observability/karpenter-rules.yaml
+jobs:
+  plan:
+    name: plan (Viewer token)
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: grafana-plan
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      changes: ${{ steps.plan.outputs.changes }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (inference-platform-ci, pinned in ci/platform-ci.env)
+        run: bash ci/install-tools.sh
+      - name: GitHub OIDC token for AWS STS
+        run: |
+          curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$RUNNER_TEMP/web-identity-token"
+          test -s "$RUNNER_TEMP/web-identity-token"
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/web-identity-token" >> "$GITHUB_ENV"
+      - name: terraform plan and rules hash
+        id: plan
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_GRAFANA_ROLE_ARN }}
+          AWS_ROLE_SESSION_NAME: gha-grafana-plan-${{ github.run_id }}
+          AWS_REGION: eu-west-1
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          GRAFANA_AUTH: ${{ secrets.GRAFANA_TOKEN }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+        run: |
+          export PATH="$PWD/.ci-bin:$PATH"
+          mimirtool rules lint --dry-run "$RULES"
+          cd observability/terraform
+          terraform init -input=false -no-color
+          terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
+          tf=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          rules=$(sha256sum "../../$RULES" | cut -d' ' -f1)
+          sha=$(printf '%s %s' "$tf" "$rules" | sha256sum | cut -d' ' -f1)
+          echo "changes=$sha" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Grafana plan to approve (${GITHUB_REF_NAME})"
+            echo "approval sha256: \`$sha\` (terraform \`$tf\`, rules file \`$rules\`)"
+            echo '```'
+            terraform show -no-color tfplan | grep -E '^Plan:|^No changes|^  # .* will be|must be replaced' || true
+            echo '```'
+            echo "Rules synced to namespace karpenter-rules:"
+            echo '```'
+            grep -E '^\s+- alert:' "../../$RULES"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+  apply:
+    name: apply the approved plan and sync the rules
+    needs: plan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: grafana
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (inference-platform-ci, pinned in ci/platform-ci.env)
+        run: bash ci/install-tools.sh
+      - name: GitHub OIDC token for AWS STS
+        run: |
+          curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value > "$RUNNER_TEMP/web-identity-token"
+          test -s "$RUNNER_TEMP/web-identity-token"
+          echo "AWS_WEB_IDENTITY_TOKEN_FILE=$RUNNER_TEMP/web-identity-token" >> "$GITHUB_ENV"
+      - name: terraform apply and rules sync, only if the plan is the approved one
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_GRAFANA_ROLE_ARN }}
+          AWS_ROLE_SESSION_NAME: gha-grafana-apply-${{ github.run_id }}
+          AWS_REGION: eu-west-1
+          GRAFANA_URL: ${{ vars.GRAFANA_URL }}
+          GRAFANA_AUTH: ${{ secrets.GRAFANA_TOKEN }}
+          TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
+          PROM_DS_UID: ${{ vars.GRAFANA_PROM_DATASOURCE_UID }}
+          APPROVED: ${{ needs.plan.outputs.changes }}
+        run: |
+          export PATH="$PWD/.ci-bin:$PATH"
+          cd observability/terraform
+          terraform init -input=false -no-color
+          terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
+          tf=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          rules=$(sha256sum "../../$RULES" | cut -d' ' -f1)
+          got=$(printf '%s %s' "$tf" "$rules" | sha256sum | cut -d' ' -f1)
+          if [ "$got" != "$APPROVED" ]; then
+            echo "::error::plan changed since approval ($got, approved $APPROVED): nothing applied"
+            exit 1
+          fi
+          terraform apply -input=false -no-color -lock-timeout=60s tfplan
+          cd ../..
+          MIMIR_ADDRESS="${GRAFANA_URL%/}/api/convert/" MIMIR_AUTH_TOKEN="$GRAFANA_AUTH" MIMIR_TENANT_ID=1 \
+            mimirtool rules sync "$RULES" --namespaces karpenter-rules --concurrency 1 \
+            --extra-headers "X-Grafana-Alerting-Datasource-UID=$PROM_DS_UID"

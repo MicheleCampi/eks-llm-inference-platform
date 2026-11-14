@@ -95,6 +95,10 @@ check rules-check "${PROM[@]}" check rules karpenter-rules.yaml
 check rules-test  "${PROM[@]}" test rules karpenter-rules.test.yaml
 check dashboard-json sh -c "python3 -m json.tool observability/karpenter-dashboard.json >/dev/null && python3 -m json.tool observability/rightsizing-dashboard.json >/dev/null"
 check metrics-shipped python3 ci/metrics-shipped.py "$W/alloy.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json observability/rightsizing-dashboard.json
+# mimirtool syncs the file to namespace karpenter-rules, derived from the file
+# name (pkg/mimirtool/rules/parser.go): an explicit namespace would escape it.
+check rules-mimirtool-lint mimirtool rules lint --dry-run observability/karpenter-rules.yaml
+check rules-no-namespace sh -c "! grep -nE '^namespace:' observability/karpenter-rules.yaml || { echo 'namespace: set, sync uses the file name'; exit 1; }"
 sed -n 1p "$W/metrics-shipped.log" | sed 's/^/  /'
 
 echo "== Kyverno policies: the platform complies, rendered with the values ArgoCD deploys"
@@ -183,6 +187,11 @@ expect_reject neg-rule-wrong-label "FAILED" docker run --rm --entrypoint promtoo
 sed 's/nodepools_(usage|limit)|//' "$W/alloy.alloy" > "$W/neg-ship.alloy"
 cmp -s "$W/alloy.alloy" "$W/neg-ship.alloy" && { echo "FAIL neg-metric-not-shipped: mutation changed nothing"; fail=1; }
 expect_reject neg-metric-not-shipped "not shipped by alloy: karpenter_nodepools_limit" python3 ci/metrics-shipped.py "$W/neg-ship.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
+{ echo 'namespace: other'; cat observability/karpenter-rules.yaml; } > "$W/neg-ns-rules.yaml"
+expect_reject neg-rules-namespace "namespace: set, sync uses the file name" sh -c "! grep -nE '^namespace:' '$W/neg-ns-rules.yaml' || { echo 'namespace: set, sync uses the file name'; exit 1; }"
+sed 's/ > on (nodepool)/ >>/' observability/karpenter-rules.yaml | sed 's/>= on (nodepool)/>= >/' > "$W/neg-lint-rules.yaml"
+cmp -s observability/karpenter-rules.yaml "$W/neg-lint-rules.yaml" && { echo "FAIL neg-rules-lint: mutation changed nothing"; fail=1; }
+expect_reject neg-rules-lint "parse error" mimirtool rules lint --dry-run "$W/neg-lint-rules.yaml"
 expect_reject neg-policy-latest "every image needs a version tag or a digest" "${KY[@]}" --resource ci/fixtures/kyverno/latest.yaml
 expect_reject neg-policy-requests "must declare resources.requests.cpu" "${KY[@]}" --resource ci/fixtures/kyverno/no-requests.yaml
 expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
