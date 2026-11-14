@@ -9,6 +9,8 @@ between step 2 and step 9.
 
 - A-016 confirmed for the release being applied (v2.2.2).
 - `bash ci/validate.sh` is ALL PASS on the tag.
+- `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
+  read-only): the apply role can do what apply and destroy need, and no more.
 - Your public IP has not changed since `PUBLIC_ACCESS_CIDRS` was set; if it
   has, set it again in both environments `live-plan` and `live`.
 - Environments `grafana-plan` and `grafana` hold `GRAFANA_URL`,
