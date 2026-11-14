@@ -120,3 +120,17 @@ run "grafana_roles_read_the_lock" {
     error_message = "Each Grafana role must read its .tflock: the S3 lockfile reads it before releasing it."
   }
 }
+
+# service-linked-roles.tf imports the node group role; a mock provider cannot
+# import, so the imported resource is overridden for every run.
+override_resource {
+  target = aws_iam_service_linked_role.eks_nodegroup
+}
+
+run "apply_reads_only_two_service_linked_roles" {
+  command = plan
+  assert {
+    condition     = one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.Action if s.Sid == "ReadServiceLinkedRoles"]) == "iam:GetRole" && length(one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.Resource if s.Sid == "ReadServiceLinkedRoles"])) == 2 && alltrue([for r in one([for s in jsondecode(aws_iam_role_policy.apply_iam.policy).Statement : s.Resource if s.Sid == "ReadServiceLinkedRoles"]) : strcontains(r, ":role/aws-service-role/") && !strcontains(r, "*")])
+    error_message = "The apply role may only read (iam:GetRole) the two service-linked roles, by exact ARN."
+  }
+}

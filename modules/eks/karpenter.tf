@@ -52,7 +52,8 @@ resource "aws_sqs_queue" "karpenter" {
 resource "aws_sqs_queue_policy" "karpenter" {
   queue_url = aws_sqs_queue.karpenter.url
   policy = jsonencode({
-    Id = "EC2InterruptionPolicy"
+    Version = "2012-10-17"
+    Id      = "EC2InterruptionPolicy"
     Statement = [
       { Effect = "Allow", Principal = { Service = ["events.amazonaws.com", "sqs.amazonaws.com"] }, Action = "sqs:SendMessage", Resource = aws_sqs_queue.karpenter.arn },
       { Sid = "DenyHTTP", Effect = "Deny", Principal = "*", Action = "sqs:*", Resource = aws_sqs_queue.karpenter.arn, Condition = { Bool = { "aws:SecureTransport" = false } } },
@@ -110,8 +111,5 @@ resource "aws_eks_pod_identity_association" "karpenter" {
   role_arn        = aws_iam_role.karpenter.arn
 }
 
-# Spot launches need this account-wide role; absent in this account (checked 2026-11-11).
-resource "aws_iam_service_linked_role" "spot" {
-  count            = var.create_spot_service_linked_role ? 1 : 0
-  aws_service_name = "spot.amazonaws.com"
-}
+# The spot service-linked role is account baseline, not stack: it lives in
+# bootstrap/ci-identity/service-linked-roles.tf, so a stack destroy keeps it.
