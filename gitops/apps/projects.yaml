@@ -21,3 +21,51 @@ spec:
     - {group: "", kind: ServiceAccount}
     - {group: rbac.authorization.k8s.io, kind: Role}
     - {group: rbac.authorization.k8s.io, kind: RoleBinding}
+---
+# Platform: every add-on and the root app. Sources, destinations and
+# cluster-scoped kinds are the ones the charts and manifests actually create
+# (rendered with --include-crds and read file by file on 14/11), nothing else.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  description: Platform add-ons and the root app, owned by the platform team
+  sourceRepos:
+    - https://github.com/MicheleCampi/eks-llm-inference-platform
+    - https://github.com/MicheleCampi/vllm-coldstart-operator
+    - https://charts.external-secrets.io
+    - https://grafana.github.io/helm-charts
+    - https://prometheus-community.github.io/helm-charts
+    - https://kyverno.github.io/kyverno/
+    - public.ecr.aws/karpenter
+  destinations:
+    - {server: https://kubernetes.default.svc, namespace: argocd}
+    - {server: https://kubernetes.default.svc, namespace: external-secrets}
+    - {server: https://kubernetes.default.svc, namespace: kube-system}
+    - {server: https://kubernetes.default.svc, namespace: kyverno}
+    - {server: https://kubernetes.default.svc, namespace: monitoring}
+    - {server: https://kubernetes.default.svc, namespace: vllm-operator-system}
+  clusterResourceWhitelist:
+    - {group: "", kind: Namespace}
+    - {group: apiextensions.k8s.io, kind: CustomResourceDefinition}
+    - {group: rbac.authorization.k8s.io, kind: ClusterRole}
+    - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
+    - {group: admissionregistration.k8s.io, kind: ValidatingWebhookConfiguration}
+    - {group: karpenter.sh, kind: NodePool}
+    - {group: karpenter.k8s.aws, kind: EC2NodeClass}
+    - {group: policies.kyverno.io, kind: ValidatingPolicy}
+---
+# default: closed, so an Application left without a project deploys nothing.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: default
+  namespace: argocd
+spec:
+  sourceRepos: []
+  destinations: []
+  clusterResourceWhitelist: []

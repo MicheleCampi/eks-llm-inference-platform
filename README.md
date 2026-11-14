@@ -3,8 +3,8 @@
 [![ci](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/workflows/ci.yml/badge.svg)](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/workflows/ci.yml)
 
 An AWS EKS cluster provisioned with Terraform, where ArgoCD deploys a
-Kubernetes operator from Git and the only manual `kubectl apply` is the root
-Application.
+Kubernetes operator from Git and the only manual `kubectl apply`s are the
+AppProjects and the root Application, from a release tag.
 
 **What it shows**
 
@@ -50,8 +50,8 @@ binary reconciles only VllmService. The cycle has not been repeated at
       ├── gitops/apps/alloy.yaml            -> Karpenter metrics to Grafana Cloud
       └── gitops/apps/kyverno.yaml, policies.yaml -> admission policies (gitops/policies/)
 
-The only manual `kubectl apply` is the root Application; everything else
-reconciles from Git.
+Manual applies: the AppProjects, then the root Application, from a release
+tag; everything else reconciles from Git.
 
 ## Design decisions
 
@@ -157,6 +157,16 @@ reconciles from Git.
   `ReadOnlyAccess` alone reads every bucket, other projects' state included.
   The GitHub OIDC provider is shared with aws-ecs-delivery-platform and only
   read here. `terraform test` asserts trust and state access.
+- **Argo CD governance: least-privilege projects, release tags.** The add-ons
+  and the root app are in AppProject `platform`: 7 source repos, 6
+  destination namespaces and 8 cluster-scoped kinds, the ones the charts and
+  manifests create, nothing else; `default` is closed. Teams stay in `tenancy`
+  and `team-*`. `ci/check-project-kinds.py` renders every app (CRDs included)
+  and fails on a cluster-scoped kind the project does not allow; two negative
+  cases cover a built-in kind and a CRD kind (scope read from the CRD). Built-in
+  kinds come from a list in the script: a rare one missing there would not be
+  caught. Every Application from this repo deploys the same release tag,
+  checked by `ci/check-release-pin.py` (negative case: an app on `main`).
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,
@@ -199,8 +209,21 @@ create the role it assumes), then its ARN is set as a repo variable:
     kubectl create ns argocd
     kubectl apply -n argocd --server-side -f \
       https://raw.githubusercontent.com/argoproj/argo-cd/v3.4.3/manifests/install.yaml
-    kubectl apply -f gitops/root-app.yaml    # the only manual apply
+    git checkout v2.0.0                      # the release the cluster runs
+    kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
+    kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter
+
+## Release and rollback
+
+The cluster runs a release tag, never `main`. To promote:
+
+1. A PR sets the new tag (`vX.Y.Z`) in every Application sourced from this
+   repo; `ci/check-release-pin.py` rejects a branch or mixed tags.
+2. Merge, then tag the merge commit: `git tag -a vX.Y.Z -m ... && git push origin vX.Y.Z`.
+3. `git checkout vX.Y.Z && kubectl apply -f gitops/root-app.yaml`.
+
+Rollback is the same with the previous tag.
 
 ## Verify
 

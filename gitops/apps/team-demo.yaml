@@ -26,7 +26,7 @@ metadata:
   finalizers: [resources-finalizer.argocd.argoproj.io]
 spec:
   project: tenancy
-  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: main, path: gitops/tenants/demo}
+  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: v2.0.0, path: gitops/tenants/demo}
   destination: {server: https://kubernetes.default.svc, namespace: team-demo}
   syncPolicy: {automated: {prune: true, selfHeal: true}}
 ---
@@ -40,6 +40,6 @@ metadata:
   finalizers: [resources-finalizer.argocd.argoproj.io]
 spec:
   project: team-demo
-  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: main, path: gitops/teams/demo, directory: {exclude: README.md}}
+  source: {repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform, targetRevision: v2.0.0, path: gitops/teams/demo, directory: {exclude: README.md}}
   destination: {server: https://kubernetes.default.svc, namespace: team-demo}
   syncPolicy: {automated: {prune: true, selfHeal: true}}

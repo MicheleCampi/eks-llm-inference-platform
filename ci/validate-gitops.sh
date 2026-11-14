@@ -52,7 +52,7 @@ PY
 helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets > "$W/eso-render.yaml" 2>/dev/null
 { cat "$W/argo-raw.yaml"; echo "---"; cat "$W/argo-proj-raw.yaml"; } | python3 "$W/served.py" applications.argoproj.io appprojects.argoproj.io > "$W/crd-argo.yaml"
 python3 "$W/served.py" secretstores.external-secrets.io externalsecrets.external-secrets.io < "$W/eso-render.yaml" > "$W/crd-eso.yaml"
-helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
+helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | tee "$W/kyverno-render.yaml" | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
 for g in argoproj.io:argo external-secrets.io:eso policies.kyverno.io:kyv; do
   mkdir -p "$W/schemas/${g%%:*}" && (cd "$W/schemas/${g%%:*}" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-${g##*:}.yaml" >/dev/null)
 done
@@ -72,7 +72,7 @@ same secret-name-matches-terraform \
   "$(yq 'select(.kind=="ExternalSecret") | .spec.data[].remoteRef.key' gitops/monitoring/grafana-secret.yaml | sort -u)" \
   "$(sed -n -E 's/^  default += "(.*)"$/\1/p' variables.tf | sed -n 2p)/grafana-cloud-remote-write"
 KV=$(yq '.spec.source.targetRevision' gitops/apps/karpenter.yaml)
-check karpenter-render sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system --set settings.clusterName=x > '$W/karpenter-render.yaml' 2>/dev/null"
+check karpenter-render sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system --set settings.clusterName=x --include-crds > '$W/karpenter-render.yaml' 2>/dev/null"
 same karpenter-metrics-port \
   "$(yq 'select(.kind=="Service" and .metadata.name=="karpenter") | .spec.ports[].name' "$W/karpenter-render.yaml")" http-metrics
 
@@ -120,7 +120,20 @@ check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py 
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
 # ci/fixtures: deliberately bad manifests for negative cases; ci/karpenter: upstream reference copy. Neither is deployed.
 check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-files ci/karpenter/cloudformation-v1.15.1.yaml .
+echo "== AppProject platform: every cluster-scoped kind its apps create is whitelisted"
+OPV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
+check operator-render sh -c "rm -rf '$W/op' && git clone -q --depth 1 -b '$OPV' https://github.com/MicheleCampi/vllm-coldstart-operator '$W/op' && helm template vcso '$W/op/chart' -n vllm-operator-system --set example.enabled=false --include-crds > '$W/op-render.yaml'"
+PK=("$W/eso-render.yaml" "$W/kyverno-render.yaml" "$W/karpenter-render.yaml" "$W/alloy-render.yaml" "$W/ksm-render.yaml" "$W/op-render.yaml" gitops/karpenter/*.yaml gitops/policies/*.yaml gitops/monitoring/*.yaml gitops/apps/*.yaml)
+check project-kinds "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py gitops/apps/projects.yaml platform "${PK[@]}"
+check release-pin "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml gitops/apps/*.yaml
 echo "== self-test: each case must be rejected for the reason named"
+sed 's/targetRevision: v[0-9.]*/targetRevision: main/' gitops/apps/policies.yaml > "$W/neg-pin.yaml"
+expect_reject neg-release-pin-main "not a release tag" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml "$W/neg-pin.yaml"
+printf 'apiVersion: scheduling.k8s.io/v1\nkind: PriorityClass\nmetadata:\n  name: neg\nvalue: 1000\n' > "$W/neg-pc.yaml"
+grep -v 'kind: NodePool}' gitops/apps/projects.yaml > "$W/neg-projects.yaml"
+# Custom kind: its scope comes from the Karpenter CRD, not from the built-in list.
+expect_reject neg-project-crd-kind "karpenter.sh/NodePool" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py "$W/neg-projects.yaml" platform "${PK[@]}"
+expect_reject neg-project-kind-not-allowed "scheduling.k8s.io/PriorityClass" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py gitops/apps/projects.yaml platform "${PK[@]}" "$W/neg-pc.yaml"
 mkdir -p "$W/neg-tf" && printf 'resource "aws_subnet" "p" {\n  vpc_id                  = "vpc-1"\n  cidr_block              = "10.0.0.0/24"\n  map_public_ip_on_launch = true\n}\n' > "$W/neg-tf/main.tf"
 expect_reject neg-trivy-public-ip "AWS-0164" "${TRIVY[@]}" "$W/neg-tf"
 grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
