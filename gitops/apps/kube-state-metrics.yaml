@@ -17,14 +17,14 @@ spec:
       releaseName: ksm
       values: |
         # Only what the requests-vs-usage dashboard needs (Grafana Cloud free tier bound).
-        collectors: [pods, nodes]
+        collectors: [pods, nodes, namespaces]
         metricAllowlist:
           - kube_pod_container_resource_requests
-          - kube_pod_labels
+          - kube_namespace_labels
           - kube_node_labels
-        # Showback: requests and usage summed per team and cost centre.
+        # Showback: team and cost centre come from the namespace (the quota boundary), not from each pod.
         metricLabelsAllowlist:
-          - pods=[team,cost-center]
+          - namespaces=[platform.michelecampi.dev/team,platform.michelecampi.dev/cost-center]
           - nodes=[karpenter.sh/capacity-type,node.kubernetes.io/instance-type,topology.kubernetes.io/zone]
         resources:
           requests: {cpu: 10m, memory: 64Mi}

@@ -85,11 +85,13 @@ reconciles from Git.
   (`observability/karpenter-dashboard.json`); metric and label names are read
   from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
   drops a metric they use. Not yet applied live.
-- **Admission policies with Kyverno, enforced.** Three `ValidatingPolicy`
+- **Admission policies with Kyverno, enforced.** Four `ValidatingPolicy`
   (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
   in chart 3.10.0) deny images without a version tag or digest, containers
   without CPU and memory requests, and privileged containers, for Pods and
-  their controllers. Exempt, with the reason in the policy: `kube-system`,
+  their controllers; and `team-*` namespaces without the team and cost-centre
+  labels, or whose team label differs from the namespace name. Exempt, with
+  the reason in the policy: `kube-system`,
   `kyverno`, and `argocd` (installed from the upstream manifest). The platform
   obeys the same rules: ESO and Alloy get starting requests, to be checked
   against usage measured live. `ci/validate-gitops.sh` runs the Kyverno CLI
@@ -100,15 +102,28 @@ reconciles from Git.
   managed add-on, pinned (v0.9.1-eksbuild.1), with 2 replicas across zones and
   a PodDisruptionBudget declared, so `kubectl top` and the HPA survive a node
   removed by Karpenter consolidation. kube-state-metrics (chart 9.0.1) exports
-  only pod requests and pod and node labels; Alloy scrapes cAdvisor on the
+  only pod requests and namespace and node labels; Alloy scrapes cAdvisor on the
   kubelet with TLS verified against the cluster CA and `nodes/metrics` only,
   and keeps six series families, a deliberate bound for the Grafana Cloud free
   plan. `observability/rightsizing-dashboard.json` shows requests against usage
-  and idle CPU per namespace, CPU requests per `team` label (showback) and
+  and idle CPU per namespace, CPU requests per team taken from the namespace
+  label `platform.michelecampi.dev/team` (showback) and
   nodes by capacity type and zone. The node group image, the Pod Identity
   agent and metrics-server are pinned and asserted by `terraform test`, so a
   change of AWS default cannot alter the cluster silently. Starting requests,
   label names and kubelet TLS are checked live; not yet applied live.
+- **Multi-tenancy with a spending cap per team.** Each team gets a namespace
+  labelled with its team and cost centre, a ResourceQuota (the team's cap),
+  a LimitRange, a default-deny ingress NetworkPolicy (egress open) and RBAC
+  that cannot change its
+  own quota or limits (`gitops/tenants/demo/`). The platform owns these through
+  the AppProject `tenancy`; the team deploys only its own namespace through
+  the AppProject `team-demo`. `ci/check-tenancy.py` fails if a team Role can
+  edit quotas or limits. NetworkPolicy is enforced by the vpc-cni managed
+  add-on (v1.22.4-eksbuild.14, network policy enabled); every add-on's
+  configuration lives in `modules/eks/addons/*.json` and `ci/addon-config.py`
+  validates it against the AWS schema of the pinned version. Not yet applied
+  live.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,
@@ -152,7 +167,7 @@ The S3 state bucket is the only resource created outside Terraform:
 
 Every check runs offline of AWS, with no credentials, the same way in CI (`.github/workflows/ci.yml`) and locally:
 
-    bash ci/install-tools.sh   # terraform 1.15.8, gitleaks, actionlint from inference-platform-ci v0.1.0, each SHA-256 verified
+    bash ci/install-tools.sh   # from inference-platform-ci v0.2.0: terraform 1.15.8, gitleaks, actionlint, helm, kubeconform, yq, openapi2jsonschema, each SHA-256 verified; PyYAML and jsonschema, every hash checked
     bash ci/validate.sh        # fmt, init -backend=false, validate, terraform test (mock aws provider), gitleaks on full history, actionlint
 
 Not checked: no misconfiguration scan (trivy) yet, and no plan or apply against a real AWS account.

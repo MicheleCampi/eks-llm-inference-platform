@@ -8,17 +8,19 @@ resource "aws_eks_addon" "metrics_server" {
   addon_name    = "metrics-server"
   addon_version = "v0.9.1-eksbuild.1" # default for 1.36, describe-addon-versions 2026-11-14
 
-  configuration_values = jsonencode({
-    replicas            = 2
-    podDisruptionBudget = { enabled = true, maxUnavailable = 1 }
-    topologySpreadConstraints = [{
-      maxSkew           = 1
-      topologyKey       = "topology.kubernetes.io/zone"
-      whenUnsatisfiable = "ScheduleAnyway"
-      labelSelector     = { matchLabels = { "app.kubernetes.io/name" = "metrics-server", "app.kubernetes.io/instance" = "metrics-server" } }
-    }]
-    resources = { requests = { cpu = "100m", memory = "200Mi" } }
-  })
+  # Validated in CI against the AWS schema (ci/addon-config.py).
+  configuration_values = file("${path.module}/addons/metrics-server.json")
 
   depends_on = [aws_eks_node_group.default]
+}
+
+# VPC CNI managed and pinned, with network policy enforcement on: without it a
+# NetworkPolicy is accepted by the API and enforced by nothing. OVERWRITE adopts
+# the aws-node DaemonSet that EKS installs at cluster creation.
+resource "aws_eks_addon" "vpc_cni" {
+  cluster_name                = aws_eks_cluster.this.name
+  addon_name                  = "vpc-cni"
+  addon_version               = "v1.22.4-eksbuild.14" # default for 1.36, describe-addon-versions 2026-11-14
+  resolve_conflicts_on_create = "OVERWRITE"
+  configuration_values        = file("${path.module}/addons/vpc-cni.json")
 }

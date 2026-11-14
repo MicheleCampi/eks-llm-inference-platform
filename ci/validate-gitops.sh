@@ -34,6 +34,7 @@ check chart-ksm retry pull kube-state-metrics https://prometheus-community.githu
 check chart-kyverno retry pull kyverno https://kyverno.github.io/kyverno/ "$KYVERNO_CHART_VERSION" "$KYVERNO_CHART_SHA256"
 check kyverno-cli retry sh -c "curl -fsSL '$KYVERNO_CLI_URL' -o '$W/kyv.tgz' && echo '$KYVERNO_CLI_SHA256  $W/kyv.tgz' | sha256sum -c - && tar xzf '$W/kyv.tgz' -C '$W' kyverno"
 check crd-argocd-app retry sh -c "curl -fsSL '$ARGOCD_APP_CRD_URL' -o '$W/argo-raw.yaml' && echo '$ARGOCD_APP_CRD_SHA256  $W/argo-raw.yaml' | sha256sum -c -"
+check crd-argocd-project retry sh -c "curl -fsSL '$ARGOCD_PROJECT_CRD_URL' -o '$W/argo-proj-raw.yaml' && echo '$ARGOCD_PROJECT_CRD_SHA256  $W/argo-proj-raw.yaml' | sha256sum -c -"
 
 # Every later check needs these inputs: stop here instead of failing in cascade.
 [ "$fail" = 0 ] || { echo "RESULT: pinned charts or CRDs unavailable, stopping"; exit 1; }
@@ -49,7 +50,7 @@ assert len(out) == len(sys.argv[1:]), f"found {len(out)} of {len(sys.argv[1:])} 
 yaml.safe_dump_all(out, sys.stdout)
 PY
 helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets > "$W/eso-render.yaml" 2>/dev/null
-python3 "$W/served.py" applications.argoproj.io < "$W/argo-raw.yaml" > "$W/crd-argo.yaml"
+{ cat "$W/argo-raw.yaml"; echo "---"; cat "$W/argo-proj-raw.yaml"; } | python3 "$W/served.py" applications.argoproj.io appprojects.argoproj.io > "$W/crd-argo.yaml"
 python3 "$W/served.py" secretstores.external-secrets.io externalsecrets.external-secrets.io < "$W/eso-render.yaml" > "$W/crd-eso.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
 for g in argoproj.io:argo external-secrets.io:eso policies.kyverno.io:kyv; do
@@ -109,7 +110,23 @@ grep -h '^pass' "$W/platform-complies.log" | sed 's/^/  /'
 check exempt-namespace-ignored "${KY[@]}" --resource ci/fixtures/kyverno/exempt.yaml
 grep -q 'pass: 0, fail: 0' "$W/exempt-namespace-ignored.log" || { echo "FAIL exempt-namespace-ignored: the kube-system pod was evaluated"; fail=1; }
 
+echo "== EKS add-on configurations against the AWS schemas"
+check addon-config "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/addon-config.py modules/eks/addons ci/schemas modules/eks/addons.tf modules/eks/karpenter.tf
+sed -n 1p "$W/addon-config.log" | sed 's/^/  /'
+echo "== tenancy: each team confined to its namespace, capped by a platform-owned quota"
+check tenancy "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-tenancy.py .
+sed -n '$p' "$W/tenancy.log" | sed 's/^/  /'
 echo "== self-test: each case must be rejected for the reason named"
+sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"
+expect_reject neg-appproject-unknown-field "descriptionTypo" "${KC[@]}" "$W/neg-project.yaml"
+rm -rf "$W/neg-ten" && mkdir -p "$W/neg-ten" && cp -r gitops "$W/neg-ten/"
+sed -i 's/resources: \["resourcequotas", "limitranges"\]/resources: ["resourcequotas", "limitranges"]\n  verbs: ["get", "list", "watch", "patch"]\n- apiGroups: [""]\n  resources: ["configmaps"]/' "$W/neg-ten/gitops/tenants/demo/rbac.yaml"
+expect_reject neg-team-edits-quota "may change limitranges, resourcequotas" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-tenancy.py "$W/neg-ten"
+mkdir -p "$W/neg-addons-type" "$W/neg-addons-version"
+echo '{"enableNetworkPolicy": true}' > "$W/neg-addons-type/vpc-cni.json"
+expect_reject neg-addon-boolean "is not one of" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/addon-config.py "$W/neg-addons-type" ci/schemas modules/eks/addons.tf
+cp modules/eks/addons/vpc-cni.json "$W/neg-addons-version/" && sed 's/v1.22.4-eksbuild.14/v1.22.4-eksbuild.99/' modules/eks/addons.tf > "$W/neg-addons.tf"
+expect_reject neg-addon-version "no schema for pinned version v1.22.4-eksbuild.99" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/addon-config.py "$W/neg-addons-version" ci/schemas "$W/neg-addons.tf"
 yq '(select(.kind=="SecretStore") | .apiVersion) = "external-secrets.io/v1beta1"' gitops/monitoring/grafana-secret.yaml > "$W/neg-v1beta1.yaml"
 expect_reject neg-unserved-api-version "could not find schema for SecretStore" "${KC[@]}" "$W/neg-v1beta1.yaml"
 yq '(select(.kind=="ExternalSecret") | .spec.refreshIntervalz) = "1h"' gitops/monitoring/grafana-secret.yaml > "$W/neg-field.yaml"
@@ -128,6 +145,8 @@ expect_reject neg-metric-not-shipped "not shipped by alloy: karpenter_nodepools_
 expect_reject neg-policy-latest "every image needs a version tag or a digest" "${KY[@]}" --resource ci/fixtures/kyverno/latest.yaml
 expect_reject neg-policy-requests "must declare resources.requests.cpu" "${KY[@]}" --resource ci/fixtures/kyverno/no-requests.yaml
 expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
+expect_reject neg-policy-team-mismatch "must equal the namespace name" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-mismatch.yaml
+expect_reject neg-policy-team-missing "namespaces must carry" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-missing.yaml
 expect_reject neg-platform-without-requests "require-requests -> resource external-secrets/Deployment/external-secrets" "${KY[@]}" --resource "$W/eso-render.yaml"
 expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
 
