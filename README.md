@@ -229,7 +229,11 @@ Rollback is the same with the previous tag.
 
 Every check runs offline of AWS, with no credentials, the same way in CI (`.github/workflows/ci.yml`) and locally:
 
-    bash ci/install-tools.sh   # from inference-platform-ci v0.2.0: terraform 1.15.8, gitleaks, actionlint, helm, kubeconform, yq, openapi2jsonschema, each SHA-256 verified; PyYAML and jsonschema, every hash checked
-    bash ci/validate.sh        # fmt, init -backend=false, validate, terraform test (mock aws provider), gitleaks on full history, actionlint
+    bash ci/install-tools.sh   # from inference-platform-ci v0.3.0: terraform 1.15.8, gitleaks, actionlint, helm, kubeconform, yq, openapi2jsonschema, trivy 0.76.2 (signature verified), each SHA-256 verified; PyYAML and jsonschema, every hash checked
+    bash ci/validate.sh        # fmt, validate, terraform test (mock aws provider, root and bootstrap), gitleaks on full history, actionlint, trivy config, kubeconform, Kyverno CLI, AppProject kinds, release pin
 
-Not checked: no misconfiguration scan (trivy) yet, and no plan or apply against a real AWS account.
+Against the real AWS account, on every pull request: `terraform plan` through
+GitHub OIDC (read-only role, see above).
+
+Not yet checked: `terraform apply` and the live behaviour (Karpenter scaling,
+consolidation, alerts, policies at admission); see `docs/runbooks/live.md`.

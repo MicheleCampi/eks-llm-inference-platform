@@ -1,0 +1,46 @@
+# Live test workload for Karpenter (docs/runbooks/live.md). Not synced by Argo CD:
+# applied by hand during the live session, deleted before destroy.
+# One pod asks 1 CPU: on a 2 vCPU node only one fits, so N replicas ask N nodes.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: karpenter-test
+  labels: {kubernetes.io/metadata.name: karpenter-test}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: inflate
+  namespace: karpenter-test
+spec:
+  replicas: 0
+  selector: {matchLabels: {app: inflate}}
+  template:
+    metadata: {labels: {app: inflate}}
+    spec:
+      # Only Karpenter nodes: the managed node group must not absorb the test.
+      nodeSelector: {karpenter.sh/nodepool: default}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector: {matchLabels: {app: inflate}}
+      terminationGracePeriodSeconds: 0
+      containers:
+        - name: pause
+          image: registry.k8s.io/pause:3.10@sha256:ee6521f290b2168b6e0935a181d4cff9be1ac3f505666ef0e3c98fae8199917a
+          resources:
+            requests: {cpu: "1", memory: 64Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        runAsGroup: 65535
+        seccompProfile:
+          type: RuntimeDefault
