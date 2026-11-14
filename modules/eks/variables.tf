@@ -50,12 +50,6 @@ variable "irsa_roles" {
   }
 }
 
-variable "create_spot_service_linked_role" {
-  description = "Create AWSServiceRoleForEC2Spot. Set false where the account already has it."
-  type        = bool
-  default     = true
-}
-
 variable "permissions_boundary_arn" {
   description = "Permissions boundary every IAM role of this module carries (eks-llm-boundary, bootstrap/ci-identity)."
   type        = string

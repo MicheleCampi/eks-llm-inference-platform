@@ -7,7 +7,7 @@ between step 2 and step 9.
 
 ## 0. Before
 
-- A-016 confirmed for the release being applied (v2.2.1).
+- A-016 confirmed for the release being applied (v2.2.2).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - Your public IP has not changed since `PUBLIC_ACCESS_CIDRS` was set; if it
   has, set it again in both environments `live-plan` and `live`.
@@ -19,13 +19,13 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.2.1
+    git checkout v2.2.2
 
-Read this runbook from main: commits after v2.2.1 change documentation only.
+Read this runbook from main: commits after v2.2.2 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.2.1
+    gh workflow run apply.yml --ref v2.2.2
     gh run watch
 
 Open the run: the plan job summary shows the plan and its sha256. Expected:
@@ -45,7 +45,7 @@ application is Synced and Healthy.
 
 ## 4. Grafana as code and the secret
 
-    gh workflow run observability.yml --ref v2.2.1
+    gh workflow run observability.yml --ref v2.2.2
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -113,7 +113,7 @@ NodePool: Karpenter drains and terminates its nodes before the cluster goes.
     kubectl delete nodepool default
     kubectl get nodeclaims -w        # wait until empty
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.2.1
+    gh workflow run destroy.yml --ref v2.2.2
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session.

@@ -65,6 +65,12 @@ run "karpenter_wiring" {
     error_message = "the queue must deny non-TLS access"
   }
   assert {
+    # Without Version, SQS stores "2008-10-17" and the provider waits until it
+    # times out (live attempt 1, 2026-11-14; reproduced on a test queue).
+    condition     = try(jsondecode(aws_sqs_queue_policy.karpenter.policy).Version, "") == "2012-10-17"
+    error_message = "the queue policy must declare Version 2012-10-17"
+  }
+  assert {
     condition     = length(aws_cloudwatch_event_target.karpenter) == 5 && alltrue([for t in aws_cloudwatch_event_target.karpenter : t.arn == aws_sqs_queue.karpenter.arn])
     error_message = "all 5 interruption rules must target the queue"
   }
