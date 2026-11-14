@@ -22,3 +22,15 @@ misconfigurations:
     paths: [kyverno.yaml, operator.yaml]
     statement: "Kyverno background controller (generate rules); vllm-coldstart-operator chart grants services/endpoints, scope to review in the operator repo."
     expired_at: 2027-05-14
+  - id: KSV-0041
+    paths: [argocd.yaml]
+    statement: "Argo CD applicationset-controller reads and writes the cluster and repository Secrets it manages."
+    expired_at: 2027-05-14
+  - id: KSV-0044
+    paths: [argocd.yaml]
+    statement: "Upstream Argo CD Role with wildcard rights confined to its own namespace (argocd)."
+    expired_at: 2027-05-14
+  - id: KSV-0046
+    paths: [argocd.yaml]
+    statement: "Argo CD application-controller and server manage any kind the apps deploy; narrowed by AppProject platform (sourceRepos, destinations, cluster-scoped kinds)."
+    expired_at: 2027-05-14

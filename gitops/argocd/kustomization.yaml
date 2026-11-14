@@ -1,0 +1,18 @@
+# Argo CD install: upstream v3.4.3 manifest vendored in upstream/ (SHA-256
+# pinned in ci/versions.env, checked in CI) plus a pod securityContext on the
+# 5 workloads that had none (trivy KSV-0118). Their containers already run
+# non-root with seccomp RuntimeDefault; this states it at pod level too.
+# Apply: kubectl apply -k gitops/argocd --server-side
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: argocd
+resources:
+  - upstream/install-v3.4.3.yaml
+patches:
+  - target:
+      kind: (Deployment|StatefulSet)
+      name: argocd-(applicationset-controller|dex-server|repo-server|server|application-controller)
+    patch: |-
+      - op: add
+        path: /spec/template/spec/securityContext
+        value: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
