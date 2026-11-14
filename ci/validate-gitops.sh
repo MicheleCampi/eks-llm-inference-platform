@@ -20,6 +20,7 @@ retry() { local n=1 d=15; until "$@"; do [ $n -ge 4 ] && return 1; echo "retry $
 echo "== pins match what ArgoCD deploys"
 same pin-eso-chart   "$(yq '.spec.source.targetRevision' gitops/apps/external-secrets.yaml)" "$ESO_CHART_VERSION"
 same pin-alloy-chart "$(yq '.spec.source.targetRevision' gitops/apps/alloy.yaml)" "$ALLOY_CHART_VERSION"
+same pin-ksm-chart "$(yq '.spec.source.targetRevision' gitops/apps/kube-state-metrics.yaml)" "$KSM_CHART_VERSION"
 same pin-kyverno-chart "$(yq '.spec.source.targetRevision' gitops/apps/kyverno.yaml)" "$KYVERNO_CHART_VERSION"
 
 echo "== charts and CRDs at the pinned SHA-256"
@@ -29,6 +30,7 @@ pull() { # name repo version sha256
 }
 check chart-eso   retry pull external-secrets https://charts.external-secrets.io "$ESO_CHART_VERSION" "$ESO_CHART_SHA256"
 check chart-alloy retry pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" "$ALLOY_CHART_SHA256"
+check chart-ksm retry pull kube-state-metrics https://prometheus-community.github.io/helm-charts "$KSM_CHART_VERSION" "$KSM_CHART_SHA256"
 check chart-kyverno retry pull kyverno https://kyverno.github.io/kyverno/ "$KYVERNO_CHART_VERSION" "$KYVERNO_CHART_SHA256"
 check kyverno-cli retry sh -c "curl -fsSL '$KYVERNO_CLI_URL' -o '$W/kyv.tgz' && echo '$KYVERNO_CLI_SHA256  $W/kyv.tgz' | sha256sum -c - && tar xzf '$W/kyv.tgz' -C '$W' kyverno"
 check crd-argocd-app retry sh -c "curl -fsSL '$ARGOCD_APP_CRD_URL' -o '$W/argo-raw.yaml' && echo '$ARGOCD_APP_CRD_SHA256  $W/argo-raw.yaml' | sha256sum -c -"
@@ -78,6 +80,10 @@ yq '.spec.source.helm.values' gitops/apps/alloy.yaml > "$W/alloy-values.yaml"
 check alloy-render sh -c "helm template alloy '$W/alloy-$ALLOY_CHART_VERSION.tgz' -n monitoring -f '$W/alloy-values.yaml' > '$W/alloy-render.yaml'"
 check alloy-render-nonempty test -s "$W/alloy-render.yaml"
 check alloy-render-schema "${KC[@]}" "$W/alloy-render.yaml"
+yq '.spec.source.helm.values' gitops/apps/kube-state-metrics.yaml > "$W/ksm-values.yaml"
+check ksm-render sh -c "helm template ksm '$W/kube-state-metrics-$KSM_CHART_VERSION.tgz' -n monitoring -f '$W/ksm-values.yaml' > '$W/ksm-render.yaml'"
+check ksm-render-nonempty test -s "$W/ksm-render.yaml"
+check ksm-render-schema "${KC[@]}" "$W/ksm-render.yaml"
 yq '.alloy.configMap.content' "$W/alloy-values.yaml" > "$W/alloy.alloy"
 ALLOY=(docker run --rm -v "$W:/c:ro" "$ALLOY_IMAGE" validate)
 check alloy-config "${ALLOY[@]}" /c/alloy.alloy
@@ -86,8 +92,8 @@ echo "== Karpenter alert rules and dashboard"
 PROM=(docker run --rm --entrypoint promtool -v "$PWD/observability:/r:ro" -w /r "$PROM_IMAGE")
 check rules-check "${PROM[@]}" check rules karpenter-rules.yaml
 check rules-test  "${PROM[@]}" test rules karpenter-rules.test.yaml
-check dashboard-json python3 -m json.tool observability/karpenter-dashboard.json
-check metrics-shipped python3 ci/metrics-shipped.py "$W/alloy.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json
+check dashboard-json sh -c "python3 -m json.tool observability/karpenter-dashboard.json >/dev/null && python3 -m json.tool observability/rightsizing-dashboard.json >/dev/null"
+check metrics-shipped python3 ci/metrics-shipped.py "$W/alloy.alloy" observability/karpenter-rules.yaml observability/karpenter-dashboard.json observability/rightsizing-dashboard.json
 sed -n 1p "$W/metrics-shipped.log" | sed 's/^/  /'
 
 echo "== Kyverno policies: the platform complies, rendered with the values ArgoCD deploys"
@@ -98,7 +104,7 @@ OV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
 check operator-src retry sh -c "rm -rf '$W/op' && git clone -q --depth 1 --branch '$OV' https://github.com/MicheleCampi/vllm-coldstart-operator.git '$W/op'"
 # example.enabled=false, as the Application's helm parameters set it.
 helm template vcso "$W/op/chart" -n vllm-operator-system --set example.enabled=false > "$W/op-deployed.yaml"
-check platform-complies "${KY[@]}" --resource "$W/eso-deployed.yaml" --resource "$W/alloy-render.yaml" --resource "$W/op-deployed.yaml"
+check platform-complies "${KY[@]}" --resource "$W/eso-deployed.yaml" --resource "$W/alloy-render.yaml" --resource "$W/op-deployed.yaml" --resource "$W/ksm-render.yaml"
 grep -h '^pass' "$W/platform-complies.log" | sed 's/^/  /'
 check exempt-namespace-ignored "${KY[@]}" --resource ci/fixtures/kyverno/exempt.yaml
 grep -q 'pass: 0, fail: 0' "$W/exempt-namespace-ignored.log" || { echo "FAIL exempt-namespace-ignored: the kube-system pod was evaluated"; fail=1; }

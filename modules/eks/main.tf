@@ -70,6 +70,10 @@ resource "aws_eks_node_group" "default" {
   node_role_arn   = aws_iam_role.node.arn
   subnet_ids      = var.subnet_ids
   instance_types  = var.node_instance_types
+  # Pinned image, the same AL2023 release as the Karpenter EC2NodeClass
+  # (SSM recommended/release_version for 1.36, read 2026-11-14).
+  ami_type        = "AL2023_x86_64_STANDARD"
+  release_version = "1.36.5-20261107"
 
   launch_template {
     id      = aws_launch_template.node.id

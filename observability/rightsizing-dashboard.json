@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 39,
+  "tags": [
+    "karpenter",
+    "eks"
+  ],
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "refresh": "30s",
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "type": "datasource",
+        "query": "prometheus"
+      }
+    ]
+  },
+  "title": "Right-sizing: requests vs usage",
+  "uid": "eks-rightsizing",
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "CPU: requests vs usage per namespace",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"})",
+          "legendFormat": "{{namespace}} requests"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m]))",
+          "legendFormat": "{{namespace}} usage"
+        }
+      ],
+      "id": 1
+    },
+    {
+      "type": "timeseries",
+      "title": "Memory: requests vs working set per namespace",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (namespace) (kube_pod_container_resource_requests{resource=\"memory\"})",
+          "legendFormat": "{{namespace}} requests"
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (namespace) (container_memory_working_set_bytes{container!=\"\"})",
+          "legendFormat": "{{namespace}} working set"
+        }
+      ],
+      "id": 2
+    },
+    {
+      "type": "timeseries",
+      "title": "Idle CPU requests per namespace (waste)",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "1 - sum by (namespace) (rate(container_cpu_usage_seconds_total{container!=\"\"}[5m])) / sum by (namespace) (kube_pod_container_resource_requests{resource=\"cpu\"})",
+          "legendFormat": "{{namespace}}"
+        }
+      ],
+      "id": 3
+    },
+    {
+      "type": "timeseries",
+      "title": "Showback: CPU requests per team",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum by (label_team) (kube_pod_container_resource_requests{resource=\"cpu\"} * on (namespace, pod) group_left (label_team) kube_pod_labels)",
+          "legendFormat": "{{label_team}}"
+        }
+      ],
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Nodes by capacity type and zone",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "count by (label_karpenter_sh_capacity_type, label_topology_kubernetes_io_zone) (kube_node_labels)",
+          "legendFormat": "{{label_karpenter_sh_capacity_type}} {{label_topology_kubernetes_io_zone}}"
+        }
+      ],
+      "id": 5
+    }
+  ]
+}

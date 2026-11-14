@@ -75,6 +75,86 @@ spec:
                 }
               }
 
+              // Right-sizing: usage from the kubelet (cAdvisor), requests and labels
+              // from kube-state-metrics. Kubelet scraped directly on 10250 with the service
+              // account token and TLS verified against the cluster CA (nodeadm sets
+              // serverTLSBootstrap; that the CA validates it is checked live). RBAC:
+              // nodes/metrics only, never nodes/proxy.
+              discovery.kubernetes "nodes" {
+                role = "node"
+              }
+
+              discovery.relabel "cadvisor" {
+                targets = discovery.kubernetes.nodes.targets
+                rule {
+                  target_label = "__metrics_path__"
+                  replacement  = "/metrics/cadvisor"
+                }
+                rule {
+                  source_labels = ["__meta_kubernetes_node_name"]
+                  target_label  = "node"
+                }
+                rule {
+                  target_label = "job"
+                  replacement  = "cadvisor"
+                }
+              }
+
+              prometheus.scrape "cadvisor" {
+                targets           = discovery.relabel.cadvisor.output
+                scheme            = "https"
+                bearer_token_file = "/var/run/secrets/kubernetes.io/serviceaccount/token"
+                tls_config {
+                  ca_file = "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+                }
+                forward_to = [prometheus.relabel.rightsizing.receiver]
+              }
+
+              discovery.kubernetes "ksm" {
+                role = "endpoints"
+                namespaces {
+                  names = ["monitoring"]
+                }
+                selectors {
+                  role  = "service"
+                  label = "app.kubernetes.io/name=kube-state-metrics"
+                }
+              }
+
+              discovery.relabel "ksm" {
+                targets = discovery.kubernetes.ksm.targets
+                rule {
+                  source_labels = ["__meta_kubernetes_endpoint_port_name"]
+                  regex         = "http"
+                  action        = "keep"
+                }
+                rule {
+                  target_label = "job"
+                  replacement  = "kube-state-metrics"
+                }
+              }
+
+              prometheus.scrape "ksm" {
+                targets    = discovery.relabel.ksm.output
+                forward_to = [prometheus.relabel.rightsizing.receiver]
+              }
+
+              // Six series families only (free plan bound); pod-level and pause-container
+              // cAdvisor series are dropped.
+              prometheus.relabel "rightsizing" {
+                forward_to = [prometheus.remote_write.grafana_cloud.receiver]
+                rule {
+                  source_labels = ["__name__"]
+                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_pod_labels|kube_node_labels"
+                  action        = "keep"
+                }
+                rule {
+                  source_labels = ["__name__", "container"]
+                  regex         = "container_.*;(|POD)"
+                  action        = "drop"
+                }
+              }
+
               prometheus.remote_write "grafana_cloud" {
                 endpoint {
                   url = sys.env("GC_PROM_URL")

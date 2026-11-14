@@ -97,8 +97,9 @@ resource "aws_ec2_tag" "karpenter_sg" {
 }
 
 resource "aws_eks_addon" "pod_identity_agent" {
-  cluster_name = aws_eks_cluster.this.name
-  addon_name   = "eks-pod-identity-agent"
+  cluster_name  = aws_eks_cluster.this.name
+  addon_name    = "eks-pod-identity-agent"
+  addon_version = "v1.4.1-eksbuild.3" # default for 1.36, describe-addon-versions 2026-11-14
 }
 
 resource "aws_eks_pod_identity_association" "karpenter" {
