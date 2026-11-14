@@ -206,7 +206,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.1.0                      # the release the cluster runs
+    git checkout v2.2.0                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
@@ -236,3 +236,20 @@ GitHub OIDC (read-only role, see above).
 
 Not yet checked: `terraform apply` and the live behaviour (Karpenter scaling,
 consolidation, alerts, policies at admission); see `docs/runbooks/live.md`.
+
+## Production gaps
+
+Known and accepted for this project; each would be closed before production.
+
+- One reviewer: the environments `live` and `grafana` have a single required
+  reviewer, who is also the author, so a change can be self-approved.
+- The apply role is broad (PowerUserAccess under a permissions boundary): to
+  be narrowed with IAM Access Analyzer policy generation from the live
+  session's CloudTrail.
+- kustomize is pinned by SHA-256 only: its releases are not signed.
+- Alloy's ClusterRole is the chart's rules minus secrets: to be narrowed to
+  the resources its pipeline actually reads.
+- The Grafana notification policy replaces the whole tree: acceptable only
+  because the Grafana Cloud stack is dedicated to this project.
+- Rule changes are approved by the hash of the rules file, not by a diff
+  against Grafana: the documented `/api/convert/` commands are load and sync.

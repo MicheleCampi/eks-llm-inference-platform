@@ -85,3 +85,30 @@ run "apply_state_is_only_its_own_key" {
     error_message = "apply role may read and write only this stack's state key and lock"
   }
 }
+
+run "grafana_roles_trust_one_environment_each" {
+  command = plan
+  assert {
+    condition     = jsondecode(aws_iam_role.grafana["plan"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:environment:grafana-plan" && jsondecode(aws_iam_role.grafana["apply"].assume_role_policy).Statement[0].Condition.StringEquals["token.actions.githubusercontent.com:sub"] == "repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:environment:grafana" && !strcontains(aws_iam_role.grafana["plan"].assume_role_policy, "*") && !strcontains(aws_iam_role.grafana["apply"].assume_role_policy, "*")
+    error_message = "Each Grafana role must trust exactly its own environment."
+  }
+}
+
+run "grafana_plan_writes_only_the_lock" {
+  command = plan
+  assert {
+    condition     = one([for s in jsondecode(aws_iam_role_policy.grafana_state["plan"].policy).Statement : s.Resource if s.Sid == "WriteState"]) == ["${local.grafana_state_arn}.tflock"]
+    error_message = "The Grafana plan role may write only the lock file."
+  }
+}
+
+run "grafana_roles_reach_only_grafana_state" {
+  command = plan
+  assert {
+    condition = alltrue(flatten([for k in ["plan", "apply"] : [for s in jsondecode(aws_iam_role_policy.grafana_state[k].policy).Statement : [
+      alltrue([for a in flatten([s.Action]) : startswith(a, "s3:")]),
+      alltrue([for r in flatten([s.Resource]) : contains(["arn:${local.partition}:s3:::${local.state_bucket}", local.grafana_state_arn, "${local.grafana_state_arn}.tflock"], r)]),
+    ]]]))
+    error_message = "Grafana roles may use only S3 on the bucket and the Grafana state and lock."
+  }
+}
