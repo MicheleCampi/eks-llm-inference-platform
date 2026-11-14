@@ -135,6 +135,17 @@ reconciles from Git.
   instances, volumes and ENIs (launch template `tag_specifications`).
   `terraform test` asserts the filter, the alerts and the node tags. Not yet
   applied live.
+- **Misconfiguration scan with trivy, blocking.** `ci/validate-gitops.sh` runs
+  `trivy config` (v0.76.2 from inference-platform-ci v0.3.0: release binary,
+  Sigstore signature verified before pinning, not `trivy-action`) on Terraform
+  and manifests with the checks built into that binary (`--skip-check-update`);
+  any HIGH or CRITICAL finding fails CI, and `neg-trivy-public-ip` proves it
+  does. Fixed: no automatic public IPs in the public subnets (AWS-0164).
+  Accepted in `.trivyignore`, each with its reason and an expiry: AWS-0039
+  (EKS 1.28+ already encrypts all API data with an AWS owned key) and AWS-0040
+  (public endpoint limited to `public_access_cidrs`, private access on).
+  Skipped: `ci/fixtures` (deliberately bad) and the upstream Karpenter
+  CloudFormation copy. Not yet scanned: Helm charts rendered with our values.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,
