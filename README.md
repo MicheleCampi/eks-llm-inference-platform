@@ -146,6 +146,17 @@ reconciles from Git.
   (public endpoint limited to `public_access_cidrs`, private access on).
   Skipped: `ci/fixtures` (deliberately bad) and the upstream Karpenter
   CloudFormation copy. Not yet scanned: Helm charts rendered with our values.
+- **terraform plan on pull requests, via OIDC, no stored keys.** The `plan` job
+  gets a GitHub OIDC token with `curl` and lets Terraform assume
+  `eks-llm-ci-plan` through `AWS_ROLE_ARN` and `AWS_WEB_IDENTITY_TOKEN_FILE`
+  (no third-party action). The role (`bootstrap/ci-identity`, outside the
+  cluster stack) trusts only this repo's pull requests by immutable subject
+  (`repo:MicheleCampi@215741962/eks-llm-inference-platform@1299498076:pull_request`),
+  has `ReadOnlyAccess`, reads this stack's state and writes only its lock file.
+  Explicit Deny on every other S3 object and on secret values, because
+  `ReadOnlyAccess` alone reads every bucket, other projects' state included.
+  The GitHub OIDC provider is shared with aws-ecs-delivery-platform and only
+  read here. `terraform test` asserts trust and state access.
 - **EKS access entries (API mode)**, not the legacy aws-auth ConfigMap.
 - **Public API endpoint restricted** with `public_access_cidrs`, set at apply
   time and never committed. EKS treats an empty list as open to the internet,
@@ -174,6 +185,12 @@ The S3 state bucket is the only resource created outside Terraform:
       --region eu-west-1 --create-bucket-configuration LocationConstraint=eu-west-1
     aws s3api put-bucket-versioning --bucket michele-tfstate-eks-llm \
       --versioning-configuration Status=Enabled
+
+The CI identity for `terraform plan` is applied once, by hand (CI cannot
+create the role it assumes), then its ARN is set as a repo variable:
+
+    terraform -chdir=bootstrap/ci-identity init && terraform -chdir=bootstrap/ci-identity apply
+    gh variable set AWS_PLAN_ROLE_ARN --body "$(terraform -chdir=bootstrap/ci-identity output -raw plan_role_arn)"
 
 ## Run it
 

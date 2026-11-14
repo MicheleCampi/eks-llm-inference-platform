@@ -10,6 +10,10 @@ terraform validate -no-color
 terraform test -no-color
 terraform -chdir=modules/vpc init -backend=false -input=false >/dev/null
 terraform -chdir=modules/vpc test -no-color
+# CI identity (applied once, out of the cluster stack): trust and state access asserted.
+terraform -chdir=bootstrap/ci-identity init -backend=false -input=false >/dev/null
+terraform -chdir=bootstrap/ci-identity validate -no-color
+terraform -chdir=bootstrap/ci-identity test -no-color
 echo "7ffeb01f04b5da482ef43087830de00a476098416e3b4576c38239ef1b0bef4b  ci/karpenter/cloudformation-v1.15.1.yaml" | sha256sum -c -
 python3 -I ci/karpenter/extract.py ci/karpenter/cloudformation-v1.15.1.yaml modules/eks/karpenter-policies --check
 gitleaks git --no-banner --redact .
