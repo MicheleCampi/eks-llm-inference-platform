@@ -4,10 +4,10 @@ metadata:
   name: karpenter-nodes
   namespace: argocd
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: main
+    targetRevision: v2.0.0
     path: gitops/karpenter
   destination:
     server: https://kubernetes.default.svc

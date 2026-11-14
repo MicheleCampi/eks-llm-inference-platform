@@ -8,10 +8,10 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: default
+  project: platform
   source:
     repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: main
+    targetRevision: v2.0.0
     path: gitops/monitoring
   destination:
     server: https://kubernetes.default.svc
