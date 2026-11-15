@@ -11,10 +11,11 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: v2.2.5
+    targetRevision: v2.2.6
     path: gitops/policies
   destination:
     server: https://kubernetes.default.svc
+    namespace: kyverno  # resources are cluster-scoped; project platform allows only listed namespaces
   syncPolicy:
     automated: {prune: true, selfHeal: true}
     syncOptions: [ServerSideApply=true, SkipDryRunOnMissingResource=true]
