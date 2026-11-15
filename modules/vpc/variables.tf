@@ -17,3 +17,9 @@ variable "nat_mode" {
     error_message = "nat_mode must be none, single or per_az."
   }
 }
+
+variable "private_subnet_tags" {
+  description = "Extra tags on the private subnets (e.g. karpenter.sh/discovery). Owned here only: no aws_ec2_tag on the same key."
+  type        = map(string)
+  default     = {}
+}

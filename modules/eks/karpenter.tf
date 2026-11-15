@@ -85,11 +85,14 @@ resource "aws_cloudwatch_event_target" "karpenter" {
 }
 
 # EC2NodeClass finds subnets and the cluster security group by this tag.
-resource "aws_ec2_tag" "karpenter_subnet" {
-  count       = length(var.subnet_ids)
-  resource_id = var.subnet_ids[count.index]
-  key         = "karpenter.sh/discovery"
-  value       = var.cluster_name
+# The subnet discovery tag is owned by the vpc module (private_subnet_tags):
+# two owners of one tag made every plan remove it (live attempt 2). Forget the
+# old resource without deleting the tag from AWS.
+removed {
+  from = aws_ec2_tag.karpenter_subnet
+  lifecycle {
+    destroy = false
+  }
 }
 
 resource "aws_ec2_tag" "karpenter_sg" {

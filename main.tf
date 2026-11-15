@@ -1,5 +1,6 @@
 module "vpc" {
-  source = "./modules/vpc"
+  source              = "./modules/vpc"
+  private_subnet_tags = { "karpenter.sh/discovery" = var.cluster_name }
 
   name     = var.cluster_name
   vpc_cidr = var.vpc_cidr
