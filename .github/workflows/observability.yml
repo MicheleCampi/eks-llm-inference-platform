@@ -48,6 +48,7 @@ jobs:
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
           TF_VAR_oncall_email: ${{ secrets.ONCALL_EMAIL }}
         run: |
+          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
           export PATH="$PWD/.ci-bin:$PATH"
           mimirtool rules lint --dry-run "$RULES"
           cd observability/terraform
@@ -67,7 +68,7 @@ jobs:
             echo '```'
             grep -E '^\s+- alert:' "../../$RULES"
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | sed -E 's/\b[0-9]{12}\b/<account>/g' >> "$GITHUB_STEP_SUMMARY"
   apply:
     name: apply the approved plan and sync the rules
     needs: plan
@@ -101,6 +102,7 @@ jobs:
           PROM_DS_UID: ${{ vars.GRAFANA_PROM_DATASOURCE_UID }}
           APPROVED: ${{ needs.plan.outputs.changes }}
         run: |
+          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
           export PATH="$PWD/.ci-bin:$PATH"
           cd observability/terraform
           terraform init -input=false -no-color

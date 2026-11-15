@@ -42,6 +42,7 @@ jobs:
           AWS_REGION: eu-west-1
           TF_VAR_public_access_cidrs: ${{ secrets.PUBLIC_ACCESS_CIDRS }}
         run: |
+          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
           terraform plan -destroy -input=false -no-color -lock-timeout=60s -out=tfplan
@@ -53,7 +54,7 @@ jobs:
             echo '```'
             terraform show -no-color tfplan | grep -E '^Plan:|^  # .* will be|must be replaced' || true
             echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
+          } | sed -E 's/\b[0-9]{12}\b/<account>/g' >> "$GITHUB_STEP_SUMMARY"
   destroy:
     name: destroy the approved plan
     needs: plan
@@ -83,6 +84,7 @@ jobs:
           TF_VAR_public_access_cidrs: ${{ secrets.PUBLIC_ACCESS_CIDRS }}
           APPROVED: ${{ needs.plan.outputs.changes }}
         run: |
+          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
           terraform plan -destroy -input=false -no-color -lock-timeout=60s -out=tfplan
