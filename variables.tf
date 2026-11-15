@@ -52,3 +52,13 @@ variable "budget_alert_emails" {
   type        = list(string)
   default     = []
 }
+
+variable "cluster_admin_iam_users" {
+  description = "IAM user names that administer the cluster (access entry + AmazonEKSClusterAdminPolicy). The ARN is built from the account, so no account id is committed."
+  type        = list(string)
+  default     = ["michele-cli"]
+  validation {
+    condition     = alltrue([for u in var.cluster_admin_iam_users : can(regex("^[A-Za-z0-9+=,.@_-]+$", u))])
+    error_message = "cluster_admin_iam_users must be plain IAM user names, without wildcards or paths."
+  }
+}

@@ -70,6 +70,14 @@ eks:DeleteAddon
 eks:CreatePodIdentityAssociation
 eks:DescribePodIdentityAssociation
 eks:DeletePodIdentityAssociation
+eks:CreateAccessEntry
+eks:DescribeAccessEntry
+eks:UpdateAccessEntry
+eks:DeleteAccessEntry
+eks:ListAccessEntries
+eks:AssociateAccessPolicy
+eks:DisassociateAccessPolicy
+eks:ListAssociatedAccessPolicies
 events:PutRule
 events:DescribeRule
 events:DeleteRule

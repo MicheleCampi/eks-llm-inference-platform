@@ -54,3 +54,13 @@ variable "permissions_boundary_arn" {
   description = "Permissions boundary every IAM role of this module carries (eks-llm-boundary, bootstrap/ci-identity)."
   type        = string
 }
+
+variable "cluster_admin_principal_arns" {
+  description = "IAM user or role ARNs granted AmazonEKSClusterAdminPolicy (cluster scope) through access entries. No wildcards."
+  type        = list(string)
+  default     = []
+  validation {
+    condition     = alltrue([for a in var.cluster_admin_principal_arns : can(regex("^arn:aws[a-z-]*:iam::[0-9]{12}:(user|role)/[A-Za-z0-9+=,.@_/-]+$", a))])
+    error_message = "cluster_admin_principal_arns must be IAM user or role ARNs, without wildcards."
+  }
+}
