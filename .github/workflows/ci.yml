@@ -42,7 +42,14 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # A secret, so the runner masks it in every log line of the job from the
+      # start, step env headers included (AWS_ROLE_ARN holds the account id).
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
     steps:
+      - name: Account id masked from job start (secret AWS_ACCOUNT_ID)
+        run: |
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "::error::secret AWS_ACCOUNT_ID missing or not 12 digits: AWS_ROLE_ARN would print the account id in the log"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -64,6 +71,9 @@ jobs:
           # variable's validation and keeps the plan diff faithful; a plan applies nothing.
           TF_VAR_public_access_cidrs: '["192.0.2.0/24"]'
         run: |
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          echo "::add-mask::$acct"
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "::error::secret AWS_ACCOUNT_ID is not the account of AWS_ROLE_ARN: masking would miss it"; exit 1; }
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
           terraform plan -input=false -no-color -lock-timeout=60s
