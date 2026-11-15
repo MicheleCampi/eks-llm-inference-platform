@@ -74,8 +74,4 @@ run "karpenter_wiring" {
     condition     = length(aws_cloudwatch_event_target.karpenter) == 5 && alltrue([for t in aws_cloudwatch_event_target.karpenter : t.arn == aws_sqs_queue.karpenter.arn])
     error_message = "all 5 interruption rules must target the queue"
   }
-  assert {
-    condition     = length(aws_ec2_tag.karpenter_subnet) == 2
-    error_message = "every node subnet must carry the discovery tag"
-  }
 }

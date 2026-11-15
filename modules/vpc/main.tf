@@ -64,10 +64,10 @@ resource "aws_subnet" "private" {
   cidr_block        = cidrsubnet(var.vpc_cidr, 4, count.index + 2)
   availability_zone = data.aws_availability_zones.available.names[count.index]
 
-  tags = {
+  tags = merge(var.private_subnet_tags, {
     Name                              = "${var.name}-private-${count.index}"
     "kubernetes.io/role/internal-elb" = "1"
-  }
+  })
 }
 
 resource "aws_eip" "nat" {

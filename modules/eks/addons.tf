@@ -9,7 +9,7 @@ resource "aws_eks_addon" "metrics_server" {
   addon_version = "v0.9.1-eksbuild.1" # default for 1.36, describe-addon-versions 2026-11-14
 
   # Validated in CI against the AWS schema (ci/addon-config.py).
-  configuration_values = file("${path.module}/addons/metrics-server.json")
+  configuration_values = jsonencode(jsondecode(file("${path.module}/addons/metrics-server.json")))
 
   depends_on = [aws_eks_node_group.default]
 }
@@ -22,5 +22,5 @@ resource "aws_eks_addon" "vpc_cni" {
   addon_name                  = "vpc-cni"
   addon_version               = "v1.22.4-eksbuild.14" # default for 1.36, describe-addon-versions 2026-11-14
   resolve_conflicts_on_create = "OVERWRITE"
-  configuration_values        = file("${path.module}/addons/vpc-cni.json")
+  configuration_values        = jsonencode(jsondecode(file("${path.module}/addons/vpc-cni.json")))
 }

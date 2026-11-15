@@ -13,3 +13,8 @@ output "private_subnet_ids" {
 output "nat_gateway_count" {
   value = local.nat_count
 }
+
+output "private_subnet_discovery_tags" {
+  description = "Value of karpenter.sh/discovery on each private subnet (empty if missing)."
+  value       = [for s in aws_subnet.private : lookup(s.tags, "karpenter.sh/discovery", "")]
+}
