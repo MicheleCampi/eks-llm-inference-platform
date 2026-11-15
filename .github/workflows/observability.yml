@@ -53,7 +53,7 @@ jobs:
           cd observability/terraform
           terraform init -input=false -no-color
           terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
-          tf=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          tf=$(terraform show -json tfplan | jq -S '[.resource_changes[] | select(.change.actions != ["no-op"]) | {address, actions: .change.actions, after: .change.after}] | sort_by(.address)' | sha256sum | cut -d' ' -f1)
           rules=$(sha256sum "../../$RULES" | cut -d' ' -f1)
           sha=$(printf '%s %s' "$tf" "$rules" | sha256sum | cut -d' ' -f1)
           echo "changes=$sha" >> "$GITHUB_OUTPUT"
@@ -105,7 +105,7 @@ jobs:
           cd observability/terraform
           terraform init -input=false -no-color
           terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
-          tf=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          tf=$(terraform show -json tfplan | jq -S '[.resource_changes[] | select(.change.actions != ["no-op"]) | {address, actions: .change.actions, after: .change.after}] | sort_by(.address)' | sha256sum | cut -d' ' -f1)
           rules=$(sha256sum "../../$RULES" | cut -d' ' -f1)
           got=$(printf '%s %s' "$tf" "$rules" | sha256sum | cut -d' ' -f1)
           if [ "$got" != "$APPROVED" ]; then

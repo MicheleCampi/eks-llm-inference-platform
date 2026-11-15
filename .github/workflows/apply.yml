@@ -45,7 +45,7 @@ jobs:
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
           terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
-          sha=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          sha=$(terraform show -json tfplan | jq -S '[.resource_changes[] | select(.change.actions != ["no-op"]) | {address, actions: .change.actions, after: .change.after}] | sort_by(.address)' | sha256sum | cut -d' ' -f1)
           echo "changes=$sha" >> "$GITHUB_OUTPUT"
           {
             echo "## Plan to approve (apply, ${GITHUB_REF_NAME})"
@@ -86,7 +86,7 @@ jobs:
           export PATH="$PWD/.ci-bin:$PATH"
           terraform init -input=false -no-color
           terraform plan -input=false -no-color -lock-timeout=60s -out=tfplan
-          got=$(terraform show -json tfplan | jq -S .resource_changes | sha256sum | cut -d' ' -f1)
+          got=$(terraform show -json tfplan | jq -S '[.resource_changes[] | select(.change.actions != ["no-op"]) | {address, actions: .change.actions, after: .change.after}] | sort_by(.address)' | sha256sum | cut -d' ' -f1)
           if [ "$got" != "$APPROVED" ]; then
             echo "::error::plan changed since approval ($got, approved $APPROVED): nothing applied"
             exit 1
