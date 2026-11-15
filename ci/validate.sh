@@ -21,5 +21,14 @@ echo "7ffeb01f04b5da482ef43087830de00a476098416e3b4576c38239ef1b0bef4b  ci/karpe
 python3 -I ci/karpenter/extract.py ci/karpenter/cloudformation-v1.15.1.yaml modules/eks/karpenter-policies --check
 gitleaks git --no-banner --redact .
 actionlint .github/workflows/*.yml
+# The account id is masked from each AWS job's first log line; a job without the
+# secret reference must be rejected (self-test on a copy without it).
+PY="${CI_BIN:-$PWD/.ci-bin}/venv/bin/python"
+"$PY" ci/check-account-mask.py .github/workflows/*.yml
+NEG=$(mktemp); trap 'rm -f "$NEG"' EXIT
+grep -v 'AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}' .github/workflows/apply.yml > "$NEG"
+if out=$("$PY" ci/check-account-mask.py "$NEG" 2>&1); then echo "neg-account-mask: NOT rejected"; exit 1; fi
+grep -q "job env AWS_ACCOUNT_ID is not" <<<"$out" || { echo "neg-account-mask: rejected for the wrong reason: $out"; exit 1; }
+echo "neg-account-mask: rejected as expected"
 bash ci/validate-gitops.sh
 echo "ALL PASS"

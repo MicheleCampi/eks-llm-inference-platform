@@ -23,9 +23,16 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # A secret, so the runner masks it in every log line of the job from the
+      # start, step env headers included (AWS_ROLE_ARN holds the account id).
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
     outputs:
       changes: ${{ steps.plan.outputs.changes }}
     steps:
+      - name: Account id masked from job start (secret AWS_ACCOUNT_ID)
+        run: |
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "::error::secret AWS_ACCOUNT_ID missing or not 12 digits: AWS_ROLE_ARN would print the account id in the log"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -48,7 +55,9 @@ jobs:
           TF_VAR_alert_email: ${{ secrets.ALERT_EMAIL }}
           TF_VAR_oncall_email: ${{ secrets.ONCALL_EMAIL }}
         run: |
-          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          echo "::add-mask::$acct"
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "::error::secret AWS_ACCOUNT_ID is not the account of AWS_ROLE_ARN: masking would miss it"; exit 1; }
           export PATH="$PWD/.ci-bin:$PATH"
           mimirtool rules lint --dry-run "$RULES"
           cd observability/terraform
@@ -78,7 +87,14 @@ jobs:
     permissions:
       contents: read
       id-token: write
+    env:
+      # A secret, so the runner masks it in every log line of the job from the
+      # start, step env headers included (AWS_ROLE_ARN holds the account id).
+      AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
     steps:
+      - name: Account id masked from job start (secret AWS_ACCOUNT_ID)
+        run: |
+          [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "::error::secret AWS_ACCOUNT_ID missing or not 12 digits: AWS_ROLE_ARN would print the account id in the log"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -102,7 +118,9 @@ jobs:
           PROM_DS_UID: ${{ vars.GRAFANA_PROM_DATASOURCE_UID }}
           APPROVED: ${{ needs.plan.outputs.changes }}
         run: |
-          echo "::add-mask::$(aws sts get-caller-identity --query Account --output text)"
+          acct=$(aws sts get-caller-identity --query Account --output text)
+          echo "::add-mask::$acct"
+          [ "$acct" = "$AWS_ACCOUNT_ID" ] || { echo "::error::secret AWS_ACCOUNT_ID is not the account of AWS_ROLE_ARN: masking would miss it"; exit 1; }
           export PATH="$PWD/.ci-bin:$PATH"
           cd observability/terraform
           terraform init -input=false -no-color

@@ -17,6 +17,9 @@ between step 2 and step 9.
   `GRAFANA_PROM_DATASOURCE_UID`, `AWS_GRAFANA_ROLE_ARN` (variables) and
   `GRAFANA_TOKEN`, `ALERT_EMAIL` (secrets): Viewer token and plan role in
   `grafana-plan`, writer token and apply role in `grafana`.
+- Repository secret `AWS_ACCOUNT_ID` exists (`gh secret list`): every AWS job
+  fails at its first step without it, because masking the account id from the
+  first log line depends on it (`ci/check-account-mask.py`).
 - Start time noted; target 2 hours, forced destroy at 3 hours from apply (A-016).
 
 ## 1. Check out the release
