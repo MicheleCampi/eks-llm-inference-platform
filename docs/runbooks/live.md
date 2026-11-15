@@ -108,12 +108,16 @@ privileged pod rejected by the ValidatingPolicy, same reason as in CI.
 Root app and karpenter-nodes sync with selfHeal: a deleted NodePool would be
 recreated within seconds. Stop automated sync first, then delete the
 NodePool: Karpenter drains and terminates its nodes before the cluster goes.
+Then delete the EC2NodeClass: Karpenter owns the instance profile it made for
+the node role, and the apply role may not remove it (live attempt 2).
 
     kubectl delete -f tests/live/inflate.yaml
     kubectl -n argocd patch application "$(yq .metadata.name gitops/root-app.yaml)" --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl delete nodepool default
     kubectl get nodeclaims -w        # wait until empty
+    kubectl delete ec2nodeclass default   # Karpenter deletes the instance profile it created
+    kubectl wait --for=delete ec2nodeclass/default --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
     gh workflow run destroy.yml --ref v2.2.6
 
