@@ -155,6 +155,15 @@ grep -v 'kind: NodePool}' gitops/apps/projects.yaml > "$W/neg-projects.yaml"
 # Custom kind: its scope comes from the Karpenter CRD, not from the built-in list.
 expect_reject neg-project-crd-kind "karpenter.sh/NodePool" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py "$W/neg-projects.yaml" platform "${PK[@]}"
 expect_reject neg-project-kind-not-allowed "scheduling.k8s.io/PriorityClass" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-kinds.py gitops/apps/projects.yaml platform "${PK[@]}" "$W/neg-pc.yaml"
+# Destinations: Argo CD refuses an app outside its project only at sync time (PR #34).
+check app-destinations "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-app-destinations.py gitops/apps/*.yaml gitops/root-app.yaml
+sed -n '$p' "$W/app-destinations.log" | sed 's/^/  /'
+sed 's/^    namespace: monitoring$/    namespace: default/' gitops/apps/monitoring.yaml > "$W/neg-dest.yaml"
+cmp -s gitops/apps/monitoring.yaml "$W/neg-dest.yaml" && { echo "FAIL neg-app-destination: mutation changed nothing"; fail=1; }
+expect_reject neg-app-destination "not allowed by project platform" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-app-destinations.py gitops/apps/projects.yaml "$W/neg-dest.yaml"
+sed 's/^  project: platform$/  project: default/' gitops/apps/monitoring.yaml > "$W/neg-dest-default.yaml"
+cmp -s gitops/apps/monitoring.yaml "$W/neg-dest-default.yaml" && { echo "FAIL neg-app-project-default: mutation changed nothing"; fail=1; }
+expect_reject neg-app-project-default "uses project default" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-app-destinations.py gitops/apps/projects.yaml "$W/neg-dest-default.yaml"
 mkdir -p "$W/neg-tf" && printf 'resource "aws_subnet" "p" {\n  vpc_id                  = "vpc-1"\n  cidr_block              = "10.0.0.0/24"\n  map_public_ip_on_launch = true\n}\n' > "$W/neg-tf/main.tf"
 expect_reject neg-trivy-public-ip "AWS-0164" "${TRIVY[@]}" "$W/neg-tf"
 expect_reject neg-trivy-chart-no-podsecuritycontext "KSV-0118" "${TRIVY_CH[@]}" "$W/neg-chart"
