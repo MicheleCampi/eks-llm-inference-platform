@@ -7,7 +7,7 @@ between step 2 and step 9.
 
 ## 0. Before
 
-- A-016 confirmed for the release being applied (v2.2.8).
+- A-016 confirmed for the release being applied (v2.2.9).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
   read-only): the apply role can do what apply and destroy need, and no more.
@@ -24,13 +24,13 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.2.8
+    git checkout v2.2.9
 
-Read this runbook from main: commits after v2.2.8 change documentation only.
+Read this runbook from main: commits after v2.2.9 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.2.8
+    gh workflow run apply.yml --ref v2.2.9
     gh run watch
 
 Open the run: the plan job summary shows the plan and its sha256. Expected:
@@ -50,7 +50,7 @@ application is Synced and Healthy.
 
 ## 4. Grafana as code and the secret
 
-    gh workflow run observability.yml --ref v2.2.8
+    gh workflow run observability.yml --ref v2.2.9
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -122,7 +122,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete ec2nodeclass default   # Karpenter deletes the instance profile it created
     kubectl wait --for=delete ec2nodeclass/default --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.2.8
+    gh workflow run destroy.yml --ref v2.2.9
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session.
