@@ -39,8 +39,9 @@ sim denied  iam:PutRolePolicy "$R"
 for a in CreatePolicy GetPolicy GetPolicyVersion ListPolicyVersions CreatePolicyVersion DeletePolicyVersion TagPolicy DeletePolicy; do sim allowed iam:$a "$POL"; done
 # Cluster OIDC provider.
 for a in CreateOpenIDConnectProvider GetOpenIDConnectProvider TagOpenIDConnectProvider DeleteOpenIDConnectProvider; do sim allowed iam:$a "$OIDC"; done
-# PassRole: not in CloudTrail; only to the three services the stack uses.
-for s in eks.amazonaws.com ec2.amazonaws.com pods.eks.amazonaws.com; do sim allowed iam:PassRole "$R" iam:PassedToService "$s"; done
+# PassRole: not in CloudTrail; only to the four services the stack uses
+# (fis: the Spot interruption template, modules/eks/chaos.tf).
+for s in eks.amazonaws.com ec2.amazonaws.com pods.eks.amazonaws.com fis.amazonaws.com; do sim allowed iam:PassRole "$R" iam:PassedToService "$s"; done
 sim denied  iam:PassRole "$R" iam:PassedToService lambda.amazonaws.com
 # Service-linked roles: read only (attempt 1).
 sim allowed iam:GetRole "$SLR_NG"

@@ -280,6 +280,10 @@ GitHub OIDC (read-only role, see above).
 
 Not yet checked: `terraform apply` and the live behaviour (Karpenter scaling,
 consolidation, alerts, policies at admission); see `docs/runbooks/live.md`.
+Prepared, not yet run: a real Spot interruption through AWS FIS
+(`modules/eks/chaos.tf`), drift within the budgets, the PDB honoured during
+a drain, IMDS blocked from a pod and a model served on CPU by the operator;
+see `docs/runbooks/live-3.md`.
 
 ## Production gaps
 

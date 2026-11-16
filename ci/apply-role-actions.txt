@@ -86,6 +86,12 @@ events:RemoveTargets
 events:ListTargetsByRule
 events:ListTagsForResource
 events:TagResource
+fis:CreateExperimentTemplate
+fis:GetExperimentTemplate
+fis:UpdateExperimentTemplate
+fis:DeleteExperimentTemplate
+fis:TagResource
+fis:ListTagsForResource
 secretsmanager:CreateSecret
 secretsmanager:DescribeSecret
 secretsmanager:GetResourcePolicy

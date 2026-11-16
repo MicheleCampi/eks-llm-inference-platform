@@ -169,6 +169,7 @@ python3 "$W/served.py" vllmservices.inference.michelecampi.dev < "$W/op/chart/cr
 mkdir -p "$W/schemas/inference.michelecampi.dev" && (cd "$W/schemas/inference.michelecampi.dev" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-vllm.yaml" >/dev/null)
 check live-inference-schema "${KC[@]}" tests/live/inference-cpu.yaml
 check live-inference-complies "${KY[@]}" --resource tests/live/inference-cpu.yaml
+check live-imds-probe-complies "${KY[@]}" --resource tests/live/imds-probe.yaml
 yq 'select(.kind=="VllmService") | .spec.gpuz = 0' tests/live/inference-cpu.yaml > "$W/neg-vllm.yaml"
 expect_reject neg-vllmservice-unknown-field "additional properties 'gpuz' not allowed" "${KC[@]}" "$W/neg-vllm.yaml"
 # Scaled as in live #3 (5 replicas): allowed, because its PDB exists.
