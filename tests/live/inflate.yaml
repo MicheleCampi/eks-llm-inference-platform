@@ -19,7 +19,7 @@ spec:
     metadata: {labels: {app: inflate}}
     spec:
       # Only Karpenter nodes: the managed node group must not absorb the test.
-      nodeSelector: {karpenter.sh/nodepool: default}
+      nodeSelector: {karpenter.sh/nodepool: general}
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone

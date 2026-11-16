@@ -49,6 +49,11 @@ run "pinned_and_ha" {
   }
 
   assert {
+    condition     = aws_eks_node_group.default.labels["platform.michelecampi.dev/pool"] == "system"
+    error_message = "the managed node group is pool system, labelled like the Karpenter pools"
+  }
+
+  assert {
     condition     = aws_eks_addon.pod_identity_agent.addon_version == "v1.4.1-eksbuild.3"
     error_message = "eks-pod-identity-agent must be pinned"
   }
