@@ -116,12 +116,18 @@ tag; everything else reconciles from Git.
   records them (core `nodeclaim/lifecycle`); NotReady from
   kube-state-metrics, with only the Ready condition shipped. Not yet applied
   live.
-- **Admission policies with Kyverno, enforced.** Four `ValidatingPolicy`
+- **Admission policies with Kyverno, enforced.** Five `ValidatingPolicy`
   (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
   in chart 3.10.0) deny images without a version tag or digest, containers
   without CPU and memory requests, and privileged containers, for Pods and
   their controllers; and `team-*` namespaces without the team and cost-centre
-  labels, or whose team label differs from the namespace name. Exempt, with
+  labels, or whose team label differs from the namespace name; and a
+  Deployment or StatefulSet with 2 or more replicas and no
+  PodDisruptionBudget selecting its pods (`require-pdb`, which reads the PDBs
+  live; in CI a context file stands in for the cluster). With the NodePools'
+  1h `terminationGracePeriod`, a PDB slows a drain but cannot block it.
+  `require-pdb` does not see the scale subresource (`kubectl scale`, HPA).
+  Exempt, with
   the reason in the policy: `kube-system`,
   `kyverno`, and `argocd` (installed from the upstream manifest). The platform
   obeys the same rules: ESO and Alloy get starting requests, to be checked

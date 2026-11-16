@@ -1,0 +1,42 @@
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: require-pdb
+  annotations:
+    policies.kyverno.io/description: A Deployment or StatefulSet with 2 or more replicas needs a PodDisruptionBudget that selects its pods, so a Karpenter consolidation, expiry or drift never evicts all replicas at once.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [apps]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [deployments, statefulsets]
+    # Same exemptions as require-requests: kube-system (EKS add-ons and
+    # Karpenter, whose charts ship their own PDBs), kyverno, argocd.
+    namespaceSelector:
+      matchExpressions:
+        - {key: kubernetes.io/metadata.name, operator: NotIn, values: [kube-system, kyverno, argocd]}
+  # One replica: a PDB would block every drain until terminationGracePeriod
+  # (1h), so it is not required. Absent replicas means 1.
+  matchConditions:
+    - name: replicated
+      expression: "has(object.spec.replicas) && object.spec.replicas >= 2"
+  # resource.List reads the PDBs live: the admission controller is bound to
+  # the built-in view ClusterRole (chart value rbac.viewRoleName), which can
+  # list poddisruptionbudgets. Argo CD applies a PodDisruptionBudget before a
+  # Deployment of the same sync wave, so one Application can ship both.
+  # Not covered: the scale subresource (kubectl scale, HPA, KEDA) changes
+  # replicas without an UPDATE of the Deployment.
+  variables:
+    - name: podLabels
+      expression: "has(object.spec.template.metadata.labels) ? object.spec.template.metadata.labels : {}"
+    - name: pdbs
+      expression: "resource.List('policy/v1', 'poddisruptionbudgets', object.metadata.namespace).items"
+  validations:
+    # Selector by matchLabels only; a PDB using matchExpressions does not count.
+    - expression: >-
+        dyn(variables.pdbs).exists(p, has(p.spec.selector) && has(p.spec.selector.matchLabels)
+        && size(p.spec.selector.matchLabels) > 0
+        && p.spec.selector.matchLabels.all(k, k in variables.podLabels && variables.podLabels[k] == p.spec.selector.matchLabels[k]))
+      message: "a Deployment or StatefulSet with 2 or more replicas needs a PodDisruptionBudget (matchLabels) in its namespace that selects its pods; create the PDB first"

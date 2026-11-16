@@ -1,0 +1,16 @@
+# Cluster state for require-pdb (kyverno apply --context-file): the
+# PodDisruptionBudget of tests/live/inflate.yaml, as the API server returns it.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: Context
+metadata:
+  name: pdb
+spec:
+  resources:
+    - apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: inflate
+        namespace: karpenter-test
+      spec:
+        maxUnavailable: 1
+        selector: {matchLabels: {app: inflate}}
