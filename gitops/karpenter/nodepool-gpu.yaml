@@ -1,0 +1,49 @@
+# Pool "gpu": GPU inference only. DECLARED BUT GATED: limits are 0, so
+# Karpenter never launches a node from it. The Free Plan account cannot launch
+# GPU types and has no G/VT On-Demand vCPU quota (README Findings #1).
+# Enabling it is a reviewed change, all three in one PR:
+#   1. limits sized for one node (cpu "16", nvidia.com/gpu "1"), with its
+#      hourly price read from the AWS Price List API and a BUDGET entry;
+#   2. the NVIDIA device plugin as an Argo CD Application (the AL2023 NVIDIA
+#      AMI, chosen by the al2023 alias for GPU types, ships driver and toolkit,
+#      not the plugin), so pods can request nvidia.com/gpu;
+#   3. a Service Quotas increase for "Running On-Demand G and VT instances".
+# The taint keeps every pod without a toleration off these nodes, so a GPU
+# node is never filled by CPU work and Karpenter never picks it for them.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: gpu
+spec:
+  template:
+    metadata:
+      labels: {platform.michelecampi.dev/pool: gpu}
+    spec:
+      nodeClassRef: {group: karpenter.k8s.aws, kind: EC2NodeClass, name: gpu}
+      taints:
+        - {key: nvidia.com/gpu, value: "true", effect: NoSchedule}
+      requirements:
+        - {key: karpenter.k8s.aws/instance-category, operator: In, values: [g]}
+        - {key: karpenter.k8s.aws/instance-gpu-manufacturer, operator: In, values: [nvidia]}
+        - {key: karpenter.k8s.aws/instance-gpu-count, operator: In, values: ["1"]}
+        - {key: karpenter.k8s.aws/instance-generation, operator: Gt, values: ["4"]}
+        # On-Demand only: a Spot reclaim drops in-flight requests and a cold
+        # start reloads the model weights (minutes), see vllm-coldstart-operator.
+        - {key: karpenter.sh/capacity-type, operator: In, values: [on-demand]}
+        - {key: kubernetes.io/arch, operator: In, values: [amd64]}
+      expireAfter: 168h
+      terminationGracePeriod: 1h
+  limits:
+    cpu: "0"
+    nvidia.com/gpu: "0"
+  disruption:
+    # GPU nodes are expensive to leave idle and slow to refill: removed only
+    # when empty, never consolidated under a running model server.
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 10m
+    budgets:
+      - nodes: "1"
+      - nodes: "0"
+        reasons: [Drifted]
+        schedule: "0 8 * * mon-fri"
+        duration: 10h

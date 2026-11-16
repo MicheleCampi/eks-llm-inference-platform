@@ -1,5 +1,5 @@
 # The team's spending cap inside the cluster: 2 CPU and 4Gi requested at most,
-# a quarter of the NodePool's 8 CPU (gitops/karpenter/nodepool.yaml).
+# a quarter of the 8 CPU of NodePool general (gitops/karpenter/nodepool-general.yaml).
 apiVersion: v1
 kind: ResourceQuota
 metadata:

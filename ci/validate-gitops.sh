@@ -76,6 +76,19 @@ check karpenter-render sh -c "helm template karpenter oci://public.ecr.aws/karpe
 same karpenter-metrics-port \
   "$(yq 'select(.kind=="Service" and .metadata.name=="karpenter") | .spec.ports[].name' "$W/karpenter-render.yaml")" http-metrics
 
+echo "== Karpenter pools: schema of the pinned CRDs, then the invariants a schema cannot express"
+# CRDs from the chart Argo CD deploys (--include-crds above). CEL rules
+# (x-kubernetes-validations) are not evaluated here: only the API server does.
+python3 "$W/served.py" nodepools.karpenter.sh < "$W/karpenter-render.yaml" > "$W/crd-np.yaml"
+python3 "$W/served.py" ec2nodeclasses.karpenter.k8s.aws < "$W/karpenter-render.yaml" > "$W/crd-nc.yaml"
+for g in karpenter.sh:np karpenter.k8s.aws:nc; do
+  mkdir -p "$W/schemas/${g%%:*}" && (cd "$W/schemas/${g%%:*}" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-${g##*:}.yaml" >/dev/null)
+done
+check karpenter-schema "${KC[@]}" gitops/karpenter/*.yaml
+grep -h Summary "$W/karpenter-schema.log" | sed 's/^/  /'
+check nodepools "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/*.yaml
+sed -n '$p' "$W/nodepools.log" | sed 's/^/  /'
+
 echo "== alloy: chart renders with our values; configuration validated by alloy"
 yq '.spec.source.helm.values' gitops/apps/alloy.yaml > "$W/alloy-values.yaml"
 check alloy-render sh -c "helm template alloy '$W/alloy-$ALLOY_CHART_VERSION.tgz' -n monitoring -f '$W/alloy-values.yaml' > '$W/alloy-render.yaml'"
@@ -169,6 +182,22 @@ expect_reject neg-trivy-public-ip "AWS-0164" "${TRIVY[@]}" "$W/neg-tf"
 expect_reject neg-trivy-chart-no-podsecuritycontext "KSV-0118" "${TRIVY_CH[@]}" "$W/neg-chart"
 expect_reject neg-argocd-upstream-tampered "FAILED" sh -c "echo '$ARGOCD_INSTALL_SHA256  $W/argocd-tampered.yaml' | sha256sum -c -"
 expect_reject neg-iam-role-without-boundary "without permissions_boundary" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-iam-boundary.py "$W/neg-iam"
+# Pools: a GPU-capable pool without the taint, a pool without a cost cap, an
+# unknown field, IMDSv1 allowed. Each mutation must change the file.
+mutate() { sed "$1" "$2" > "$3"; cmp -s "$2" "$3" && { echo "FAIL $4: mutation changed nothing"; fail=1; }; }
+NP=(gitops/karpenter/ec2nodeclass.yaml gitops/karpenter/ec2nodeclass-gpu.yaml gitops/karpenter/nodepool-general.yaml)
+mutate '/nvidia.com\/gpu, value/d' gitops/karpenter/nodepool-gpu.yaml "$W/neg-gpu-taint.yaml" neg-gpu-pool-untainted
+expect_reject neg-gpu-pool-untainted "can launch GPU instances without the nvidia.com/gpu NoSchedule taint" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py "${NP[@]}" "$W/neg-gpu-taint.yaml"
+mutate 's/t3.small\]/t3.small, g6.xlarge]/' gitops/karpenter/nodepool-general.yaml "$W/neg-general-gpu.yaml" neg-general-allows-gpu
+expect_reject neg-general-allows-gpu "NodePool general: can launch GPU instances" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/ec2nodeclass*.yaml gitops/karpenter/nodepool-gpu.yaml "$W/neg-general-gpu.yaml"
+mutate '/^  limits:/,/^    cpu:/d' gitops/karpenter/nodepool-general.yaml "$W/neg-no-limits.yaml" neg-pool-no-limits
+expect_reject neg-pool-no-limits "NodePool general: no spec.limits" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/ec2nodeclass*.yaml gitops/karpenter/nodepool-gpu.yaml "$W/neg-no-limits.yaml"
+mutate '/terminationGracePeriod:/d' gitops/karpenter/nodepool-general.yaml "$W/neg-no-tgp.yaml" neg-pool-no-tgp
+expect_reject neg-pool-no-tgp "no terminationGracePeriod" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/ec2nodeclass*.yaml gitops/karpenter/nodepool-gpu.yaml "$W/neg-no-tgp.yaml"
+mutate 's/httpTokens: required/httpTokens: optional/' gitops/karpenter/ec2nodeclass-gpu.yaml "$W/neg-imdsv1.yaml" neg-nodeclass-imdsv1
+expect_reject neg-nodeclass-imdsv1 "EC2NodeClass gpu: IMDSv2 must be required" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/ec2nodeclass.yaml gitops/karpenter/nodepool*.yaml "$W/neg-imdsv1.yaml"
+mutate 's/terminationGracePeriod: 1h/terminationGracePeriodz: 1h/' gitops/karpenter/nodepool-general.yaml "$W/neg-np-field.yaml" neg-nodepool-unknown-field
+expect_reject neg-nodepool-unknown-field "terminationGracePeriodz" "${KC[@]}" "$W/neg-np-field.yaml"
 grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
 expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-nodeclass.yaml"
 sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"

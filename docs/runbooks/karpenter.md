@@ -8,8 +8,9 @@ through Alloy (`gitops/apps/alloy.yaml`, job `karpenter`).
 The NodePool provisioned all the CPU in `spec.limits.cpu` for 5 minutes: new
 pods that need a node stay Pending.
 
-1. `kubectl get nodepool default -o jsonpath='{.status.resources.cpu}'` against
-   `spec.limits.cpu` (8 in `gitops/karpenter/nodepool.yaml`).
+1. `kubectl get nodepool general -o jsonpath='{.status.resources.cpu}'` against
+   `spec.limits.cpu` (8 in `gitops/karpenter/nodepool-general.yaml`). Pool
+   `gpu` has limits 0 by design (gated): it never fires this alert.
 2. `kubectl get pods -A --field-selector=status.phase=Pending`: which workload
    asks for capacity.
 3. `kubectl get nodeclaims`: nodes stuck launching also count against the limit.

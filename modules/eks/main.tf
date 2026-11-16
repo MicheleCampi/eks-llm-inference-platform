@@ -77,6 +77,14 @@ resource "aws_eks_node_group" "default" {
   ami_type        = "AL2023_x86_64_STANDARD"
   release_version = "1.36.5-20261107"
 
+  # Pool "system": platform controllers (Argo CD, Karpenter itself, ESO,
+  # Kyverno, Alloy) on stable On-Demand capacity that Karpenter does not
+  # manage, so Karpenter never drains the node it runs on. Karpenter pools are
+  # "general" and "gpu" (gitops/karpenter/).
+  labels = {
+    "platform.michelecampi.dev/pool" = "system"
+  }
+
   launch_template {
     id      = aws_launch_template.node.id
     version = aws_launch_template.node.latest_version

@@ -55,14 +55,31 @@ tag; everything else reconciles from Git.
 
 ## Design decisions
 
-- **Node disruption is bounded.** The Karpenter NodePool
-  (`gitops/karpenter/nodepool.yaml`) replaces nodes after 24h (`expireAfter`),
-  so a pinned-AMI bump reaches every node within a day; caps any drain at 1h
-  (`terminationGracePeriod`), so a blocking PodDisruptionBudget cannot stall
-  expiry or drift; and declares disruption budgets: at most 20% of nodes at
-  once, and no drift replacement 08:00-18:00 UTC on weekdays. Spot
-  interruptions are not voluntary and ignore budgets. Schema checked by
-  kubeconform against the Karpenter v1.15.1 CRDs; not yet exercised live.
+- **Three node pools, each with one job.** `system` is the managed node
+  group (On-Demand, not managed by Karpenter, so Karpenter never drains the
+  node it runs on) for the platform controllers. `general`
+  (`gitops/karpenter/nodepool-general.yaml`) is Spot-first with On-Demand
+  fallback; on this Free Plan account it can use only 3 instance types
+  (Findings #1), and the file carries the attribute selectors that replace
+  that list on a paid account. `gpu` (`nodepool-gpu.yaml`) is tainted
+  `nvidia.com/gpu:NoSchedule`, On-Demand only, consolidated only when empty,
+  and **gated**: its limits are 0, so it launches nothing until a reviewed PR
+  raises them, adds the NVIDIA device plugin and a quota increase. The file
+  lists those steps. Every node carries `platform.michelecampi.dev/pool`.
+- **Node disruption is bounded.** The `general` pool replaces nodes after
+  24h (`expireAfter`), so a pinned-AMI bump reaches every node within a day;
+  caps any drain at 1h (`terminationGracePeriod`), so a blocking
+  PodDisruptionBudget cannot stall expiry or drift; and declares disruption
+  budgets: at most 20% of nodes at once, and no drift replacement
+  08:00-18:00 UTC on weekdays. Spot interruptions are not voluntary and
+  ignore budgets.
+- **Pools checked in CI.** kubeconform validates every NodePool and
+  EC2NodeClass against the CRDs of the Karpenter chart Argo CD deploys
+  (v1.15.1); `ci/check-nodepools.py` enforces what a schema cannot: a cost
+  cap, bounded node life and drain, budgets, IMDSv2 with hop limit 1, a pinned
+  AMI, the cost tag, and that only a tainted pool can launch GPU instances.
+  Six negative cases prove each rule rejects. CEL rules of the CRDs run only
+  at the API server. Not yet exercised live.
 - **Nodes in private subnets, egress through NAT.** Managed nodes and
   Karpenter nodes get no public IP; the API endpoint has private access on
   and public access restricted to `public_access_cidrs`. `nat_mode` is

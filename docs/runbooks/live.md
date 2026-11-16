@@ -69,8 +69,8 @@ In Grafana, Karpenter metrics arrive within a few minutes.
     kubectl -n karpenter-test scale deploy/inflate --replicas=5
     kubectl get nodeclaims -w
 
-Each pod asks 1 CPU and only one fits a 2 vCPU node; the NodePool limit is
-`cpu: "8"`. Expected: four NodeClaims, four pods Running, the fifth Pending.
+Each pod asks 1 CPU and only one fits a 2 vCPU node; the limit of NodePool
+`general` is `cpu: "8"`. Expected: four NodeClaims, four pods Running, the fifth Pending.
 After 5 minutes `KarpenterNodePoolCpuLimitReached` fires and the email
 arrives at `ALERT_EMAIL`.
 
@@ -117,10 +117,10 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete -f tests/live/inflate.yaml
     kubectl -n argocd patch application "$(yq .metadata.name gitops/root-app.yaml)" --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":null}}'
-    kubectl delete nodepool default
+    kubectl delete nodepool general gpu
     kubectl get nodeclaims -w        # wait until empty
-    kubectl delete ec2nodeclass default   # Karpenter deletes the instance profile it created
-    kubectl wait --for=delete ec2nodeclass/default --timeout=300s
+    kubectl delete ec2nodeclass default gpu   # Karpenter deletes the instance profile it created
+    kubectl wait --for=delete ec2nodeclass/default ec2nodeclass/gpu --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
     gh workflow run destroy.yml --ref v2.2.9
 
