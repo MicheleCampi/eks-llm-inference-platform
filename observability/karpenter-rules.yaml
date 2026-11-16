@@ -32,3 +32,42 @@ groups:
           severity: ticket
         annotations:
           runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterNodeClaimLaunchFailed
+        # Karpenter deleted a NodeClaim because its instance did not launch or
+        # its node did not register in time (5 and 15 min liveness timeouts,
+        # core pkg/controllers/nodeclaim/lifecycle), or the EC2NodeClass was
+        # not ready: capacity was asked for and did not arrive.
+        expr: sum by (nodepool, reason) (increase(karpenter_nodeclaims_disrupted_total{reason=~"launch_timeout|registration_timeout|nodeclass_not_ready"}[30m])) > 0
+        labels:
+          severity: ticket
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterInsufficientCapacityRepeated
+        # One insufficient-capacity error is normal for Spot: Karpenter retries
+        # another offering. Three in 30 minutes mean the pool is too narrow
+        # (3 instance types on the Free Plan account).
+        expr: sum by (nodepool, capacity_type) (increase(karpenter_nodeclaims_disrupted_total{reason="insufficient_capacity"}[30m])) >= 3
+        labels:
+          severity: ticket
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterPodsUnschedulable
+        # Pods that no NodePool can host (limit reached, no matching pool, a
+        # GPU request while pool gpu is gated) for 15 minutes: work is not
+        # running. Gauge set by the provisioner on every scheduling pass.
+        expr: max(karpenter_scheduler_unschedulable_pods_count) > 0
+        for: 15m
+        labels:
+          severity: page
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: NodeNotReady
+        # A node reports Ready other than "true" (false or unknown) for 10
+        # minutes. kube-state-metrics, collector nodes. A node Karpenter
+        # deletes loses its series, so a normal termination does not fire.
+        expr: max by (node) (kube_node_status_condition{condition="Ready",status="true"}) == 0
+        for: 10m
+        labels:
+          severity: page
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md

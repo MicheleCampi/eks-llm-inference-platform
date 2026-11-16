@@ -102,14 +102,20 @@ tag; everything else reconciles from Git.
   EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
   checks chart pins and SHA-256, manifests against the deployed CRDs, the
   service account, secret name and metrics port wiring, and the Alloy config
-  with Alloy itself, with negative cases. Three alerts (NodePool CPU limit
-  reached, controller down, Spot interruption) live in
+  with Alloy itself, with negative cases. Seven alerts live in
   `observability/karpenter-rules.yaml`, Prometheus format for promtool and
   Grafana-managed rules alike, with promtool tests, a runbook
   (`docs/runbooks/karpenter.md`) and a dashboard
   (`observability/karpenter-dashboard.json`); metric and label names are read
   from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
-  drops a metric they use. Not yet applied live.
+  drops a metric they use. Pages: NodePool CPU limit reached, controller
+  down, pods unschedulable for 15 min, node NotReady for 10 min. Tickets:
+  Spot interruption, NodeClaim launch or registration failed, insufficient
+  capacity 3 times in 30 min. NodeClaim failures come from
+  `karpenter_nodeclaims_disrupted_total` by reason, as Karpenter v1.15.1
+  records them (core `nodeclaim/lifecycle`); NotReady from
+  kube-state-metrics, with only the Ready condition shipped. Not yet applied
+  live.
 - **Admission policies with Kyverno, enforced.** Four `ValidatingPolicy`
   (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
   in chart 3.10.0) deny images without a version tag or digest, containers
