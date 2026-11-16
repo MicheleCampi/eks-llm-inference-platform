@@ -162,6 +162,15 @@ check project-kinds "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-k
 check release-pin "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml gitops/apps/*.yaml
 # The live test workload must pass the same admission policies, or the live session finds out with the meter running.
 check live-workload-complies "${KY[@]}" --resource tests/live/inflate.yaml
+# The live #3 inference workload: a VllmService valid for the operator release
+# Argo CD deploys (CRD from its chart at that tag), in a namespace the
+# policies accept. The pod itself is built by the operator, at run time.
+python3 "$W/served.py" vllmservices.inference.michelecampi.dev < "$W/op/chart/crds/crd.yaml" > "$W/crd-vllm.yaml"
+mkdir -p "$W/schemas/inference.michelecampi.dev" && (cd "$W/schemas/inference.michelecampi.dev" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-vllm.yaml" >/dev/null)
+check live-inference-schema "${KC[@]}" tests/live/inference-cpu.yaml
+check live-inference-complies "${KY[@]}" --resource tests/live/inference-cpu.yaml
+yq 'select(.kind=="VllmService") | .spec.gpuz = 0' tests/live/inference-cpu.yaml > "$W/neg-vllm.yaml"
+expect_reject neg-vllmservice-unknown-field "additional properties 'gpuz' not allowed" "${KC[@]}" "$W/neg-vllm.yaml"
 # Scaled as in live #3 (5 replicas): allowed, because its PDB exists.
 sed 's/replicas: 0/replicas: 5/' tests/live/inflate.yaml > "$W/inflate-5.yaml"
 cmp -s tests/live/inflate.yaml "$W/inflate-5.yaml" && { echo "FAIL live-workload-5-replicas: mutation changed nothing"; fail=1; }

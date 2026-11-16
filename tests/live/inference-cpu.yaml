@@ -1,0 +1,40 @@
+# Live #3 inference workload: a real model served on CPU by the operator
+# (v0.11.0, gitops/apps/vllm-coldstart-operator.yaml) on pool general. Not
+# synced by Argo CD: applied by hand in the live session, deleted before
+# destroy, like inflate.yaml. NOT YET RUN on EKS.
+#
+# Why CPU: the Free Plan account cannot launch GPU types (README Findings #1),
+# so pool gpu is gated. Qwen2.5-0.5B-Instruct (Apache-2.0, ~1 GB of bf16
+# weights) runs on the vLLM CPU image; m7i-flex.large (Sapphire Rapids,
+# AVX-512) is the only free-tier type with room for 6Gi, so the request also
+# proves that Karpenter picks the instance type from the pod's needs.
+#
+# Open risks, to clear with a free pre-check on optim-dev (docker run with the
+# same command, env and 6g memory limit) before any spend:
+# - the operator sets LD_LIBRARY_PATH=/usr/local/nvidia/lib64 on every
+#   serving pod (a GPU fix); the CPU image must still start with it;
+# - VllmService has no env field, so VLLM_CPU_KVCACHE_SPACE keeps the image
+#   default; the KV cache must fit in the 6Gi limit with the weights.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference-test
+  labels: {kubernetes.io/metadata.name: inference-test}
+---
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen-0-5b-cpu
+  namespace: inference-test
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 1
+  warmupStrategy: Eager
+  # vLLM CPU release v0.11.2 (amd64), pinned by digest, read from
+  # public.ecr.aws on 2026-11-16; 1.12 GB compressed.
+  image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs: ["--max-model-len", "2048", "--dtype", "bfloat16"]
