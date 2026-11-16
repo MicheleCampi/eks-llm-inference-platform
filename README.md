@@ -55,6 +55,14 @@ tag; everything else reconciles from Git.
 
 ## Design decisions
 
+- **Node disruption is bounded.** The Karpenter NodePool
+  (`gitops/karpenter/nodepool.yaml`) replaces nodes after 24h (`expireAfter`),
+  so a pinned-AMI bump reaches every node within a day; caps any drain at 1h
+  (`terminationGracePeriod`), so a blocking PodDisruptionBudget cannot stall
+  expiry or drift; and declares disruption budgets: at most 20% of nodes at
+  once, and no drift replacement 08:00-18:00 UTC on weekdays. Spot
+  interruptions are not voluntary and ignore budgets. Schema checked by
+  kubeconform against the Karpenter v1.15.1 CRDs; not yet exercised live.
 - **Nodes in private subnets, egress through NAT.** Managed nodes and
   Karpenter nodes get no public IP; the API endpoint has private access on
   and public access restricted to `public_access_cidrs`. `nat_mode` is
