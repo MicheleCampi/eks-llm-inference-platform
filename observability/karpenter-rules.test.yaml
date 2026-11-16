@@ -55,3 +55,67 @@ tests:
         exp_alerts:
           - exp_labels: {severity: ticket, message_type: spot_interrupted}
             exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # A node fails to register (registration_timeout): fires at once, a ticket.
+  # A consolidation (reason underutilized) does not count.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_nodeclaims_disrupted_total{nodepool="general",reason="registration_timeout",capacity_type="spot",consolidation_policy="",termination_mode="graceful"}'
+        values: '0x5 1x25'
+      - series: 'karpenter_nodeclaims_disrupted_total{nodepool="general",reason="underutilized",capacity_type="spot",consolidation_policy="WhenEmptyOrUnderutilized",termination_mode="graceful"}'
+        values: '0+1x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: KarpenterNodeClaimLaunchFailed
+        exp_alerts: []
+      - eval_time: 10m
+        alertname: KarpenterNodeClaimLaunchFailed
+        exp_alerts:
+          - exp_labels: {severity: ticket, nodepool: general, reason: registration_timeout}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # Spot insufficient capacity: 2 in 30 min is normal (minute 12), the 3rd (minute 17) fires.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_nodeclaims_disrupted_total{nodepool="general",reason="insufficient_capacity",capacity_type="spot",consolidation_policy="",termination_mode="graceful"}'
+        values: '0x4 1x5 2x5 3x15'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: KarpenterInsufficientCapacityRepeated
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: KarpenterInsufficientCapacityRepeated
+        exp_alerts:
+          - exp_labels: {severity: ticket, nodepool: general, capacity_type: spot}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # One pod unschedulable 6 min, then from minute 13: pages at 30 (15 min), the blip does not.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_scheduler_unschedulable_pods_count{controller="provisioner"}'
+        values: '0x2 1x5 0x3 1x20'
+    alert_rule_test:
+      - eval_time: 9m
+        alertname: KarpenterPodsUnschedulable
+        exp_alerts: []
+      - eval_time: 30m
+        alertname: KarpenterPodsUnschedulable
+        exp_alerts:
+          - exp_labels: {severity: page}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # Node a turns NotReady (status true -> 0) and pages after 10 min; node b
+  # stays Ready; node c disappears (Karpenter terminated it) and never fires.
+  - interval: 1m
+    input_series:
+      - series: 'kube_node_status_condition{node="a",condition="Ready",status="true"}'
+        values: '1x3 0x20'
+      - series: 'kube_node_status_condition{node="b",condition="Ready",status="true"}'
+        values: '1x23'
+      - series: 'kube_node_status_condition{node="c",condition="Ready",status="true"}'
+        values: '1x3 _x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: NodeNotReady
+        exp_alerts: []
+      - eval_time: 15m
+        alertname: NodeNotReady
+        exp_alerts:
+          - exp_labels: {severity: page, node: a}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}

@@ -72,7 +72,7 @@ spec:
                 forward_to = [prometheus.remote_write.grafana_cloud.receiver]
                 rule {
                   source_labels = ["__name__"]
-                  regex         = "up|karpenter_(nodeclaims_(created|terminated|disrupted)_total|nodes_(created|terminated)_total|nodes_allocatable|pods_state|pods_startup_duration_seconds.*|scheduler_scheduling_duration_seconds.*|nodepools_(usage|limit)|voluntary_disruption_decisions_total|interruption_.*)"
+                  regex         = "up|karpenter_(nodeclaims_(created|terminated|disrupted)_total|nodes_(created|terminated)_total|nodes_allocatable|pods_state|pods_startup_duration_seconds.*|scheduler_(scheduling_duration_seconds.*|unschedulable_pods_count)|nodepools_(usage|limit)|voluntary_disruption_decisions_total|interruption_.*)"
                   action        = "keep"
                 }
               }
@@ -141,18 +141,24 @@ spec:
                 forward_to = [prometheus.relabel.rightsizing.receiver]
               }
 
-              // Six series families only (free plan bound); pod-level and pause-container
-              // cAdvisor series are dropped.
+              // Seven series families only (free plan bound); pod-level and pause-container
+              // cAdvisor series are dropped, and of the node conditions only Ready
+              // (alert NodeNotReady) is kept.
               prometheus.relabel "rightsizing" {
                 forward_to = [prometheus.remote_write.grafana_cloud.receiver]
                 rule {
                   source_labels = ["__name__"]
-                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_namespace_labels|kube_node_labels"
+                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_namespace_labels|kube_node_labels|kube_node_status_condition"
                   action        = "keep"
                 }
                 rule {
                   source_labels = ["__name__", "container"]
                   regex         = "container_.*;(|POD)"
+                  action        = "drop"
+                }
+                rule {
+                  source_labels = ["__name__", "condition"]
+                  regex         = "kube_node_status_condition;(MemoryPressure|DiskPressure|PIDPressure|NetworkUnavailable)"
                   action        = "drop"
                 }
               }

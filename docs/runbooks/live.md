@@ -72,7 +72,8 @@ In Grafana, Karpenter metrics arrive within a few minutes.
 Each pod asks 1 CPU and only one fits a 2 vCPU node; the limit of NodePool
 `general` is `cpu: "8"`. Expected: four NodeClaims, four pods Running, the fifth Pending.
 After 5 minutes `KarpenterNodePoolCpuLimitReached` fires and the email
-arrives at `ALERT_EMAIL`.
+arrives at `ALERT_EMAIL`; after 15 minutes `KarpenterPodsUnschedulable`
+fires for the fifth pod.
 
     kubectl get nodes -L topology.kubernetes.io/zone,karpenter.sh/capacity-type
 
