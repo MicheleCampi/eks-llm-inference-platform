@@ -22,19 +22,26 @@ AppProjects and the root Application, from a release tag.
 IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
 the same operator project, deployed through an ArgoCD app-of-apps, on a
-different cloud. This platform pins the operator at release `v0.4.0`; the GKE
-platform pins `v0.9.0`
-([`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml)).
+different cloud. Both platforms pin the operator at release `v0.11.0`
+([`gitops/apps/vllm-coldstart-operator.yaml`](gitops/apps/vllm-coldstart-operator.yaml);
+GKE: [`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml)).
 
-**E2E validated 2026-07-13** ([evidence](docs/evidence/e2e-2026-07-13.md)):
-Terraform-managed EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy,
-[vllm-coldstart-operator](https://github.com/MicheleCampi/vllm-coldstart-operator)
-(Rust, kube-rs) deployed via GitOps, 3 CRDs served.
+**What ran live on EKS, and what did not.**
 
-That run predates the pin: the app tracked the operator's `main` (`e93e7c1`),
-whose chart installed image `0.2.1`. The three CRDs were served, but that
-binary reconciles only VllmService. The cycle has not been repeated at
-`v0.4.0`.
+- 2026-07-13 ([evidence](docs/evidence/e2e-2026-07-13.md)): Terraform-managed
+  EKS 1.36 (2 nodes Ready), ArgoCD app-of-apps Synced/Healthy, the operator
+  deployed via GitOps, 3 CRDs served. That run tracked the operator's `main`
+  (`e93e7c1`), whose chart installed image `0.2.1`, a binary that reconciles
+  only VllmService. It served no model.
+- 2026-11-15 ([evidence](docs/evidence/live-2026-11-15.md)): the platform
+  layer (Karpenter, ESO, Alloy, Kyverno, alerts, teardown), with a `pause`
+  pod as load. The operator Application (then `v0.4.0`) was in the
+  app-of-apps, but the evidence records nothing about it, so nothing about
+  the operator is claimed from that run.
+- Not yet run on EKS: the operator at `v0.11.0`, and any model serving. CI
+  renders the `v0.11.0` chart with the values Argo CD deploys and checks it
+  against the Kyverno policies and the AppProject. GPU serving by the same
+  operator was measured on GKE and on a 3x A10 fleet, see the operator repo.
 
 ## Architecture
 
