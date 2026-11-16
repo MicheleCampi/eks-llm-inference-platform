@@ -115,7 +115,9 @@ check rules-no-namespace sh -c "! grep -nE '^namespace:' observability/karpenter
 sed -n 1p "$W/metrics-shipped.log" | sed 's/^/  /'
 
 echo "== Kyverno policies: the platform complies, rendered with the values ArgoCD deploys"
-KY=("$W/kyverno" apply gitops/policies/)
+# require-pdb reads PodDisruptionBudgets from the cluster (resource.List): the
+# context file stands in for it, with the one PDB tests/live/inflate.yaml creates.
+KY=("$W/kyverno" apply gitops/policies/ --context-file ci/fixtures/kyverno/pdb-context.yaml)
 yq '.spec.source.helm.valuesObject' gitops/apps/external-secrets.yaml > "$W/eso-values.yaml"
 helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets -f "$W/eso-values.yaml" > "$W/eso-deployed.yaml"
 OV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
@@ -160,6 +162,11 @@ check project-kinds "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-project-k
 check release-pin "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml gitops/apps/*.yaml
 # The live test workload must pass the same admission policies, or the live session finds out with the meter running.
 check live-workload-complies "${KY[@]}" --resource tests/live/inflate.yaml
+# Scaled as in live #3 (5 replicas): allowed, because its PDB exists.
+sed 's/replicas: 0/replicas: 5/' tests/live/inflate.yaml > "$W/inflate-5.yaml"
+cmp -s tests/live/inflate.yaml "$W/inflate-5.yaml" && { echo "FAIL live-workload-5-replicas: mutation changed nothing"; fail=1; }
+check live-workload-5-replicas "${KY[@]}" --resource "$W/inflate-5.yaml"
+grep -q 'fail: 0, warn: 0, error: 0' "$W/live-workload-5-replicas.log" || { echo "FAIL live-workload-5-replicas: not every policy passed"; fail=1; }
 echo "== self-test: each case must be rejected for the reason named"
 sed 's/targetRevision: v[0-9.]*/targetRevision: main/' gitops/apps/policies.yaml > "$W/neg-pin.yaml"
 expect_reject neg-release-pin-main "not a release tag" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml "$W/neg-pin.yaml"
@@ -232,6 +239,7 @@ cmp -s observability/karpenter-rules.yaml "$W/neg-lint-rules.yaml" && { echo "FA
 expect_reject neg-rules-lint "parse error" mimirtool rules lint --dry-run "$W/neg-lint-rules.yaml"
 expect_reject neg-policy-latest "every image needs a version tag or a digest" "${KY[@]}" --resource ci/fixtures/kyverno/latest.yaml
 expect_reject neg-policy-requests "must declare resources.requests.cpu" "${KY[@]}" --resource ci/fixtures/kyverno/no-requests.yaml
+expect_reject neg-policy-pdb-missing "needs a PodDisruptionBudget" "${KY[@]}" --resource ci/fixtures/kyverno/pdb-missing.yaml
 expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
 expect_reject neg-policy-team-mismatch "must equal the namespace name" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-mismatch.yaml
 expect_reject neg-policy-team-missing "namespaces must carry" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-missing.yaml

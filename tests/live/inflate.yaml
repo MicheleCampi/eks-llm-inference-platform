@@ -7,6 +7,17 @@ metadata:
   name: karpenter-test
   labels: {kubernetes.io/metadata.name: karpenter-test}
 ---
+# Created before the Deployment (require-pdb). During a drain at most one
+# inflate pod is evicted at a time: live #3 checks Karpenter respects it.
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: inflate
+  namespace: karpenter-test
+spec:
+  maxUnavailable: 1
+  selector: {matchLabels: {app: inflate}}
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
