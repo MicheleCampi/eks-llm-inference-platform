@@ -20,5 +20,9 @@ chk "Secrets $C/ (incl. planned deletion)" "$(q secretsmanager list-secrets --in
 # (live attempt 2: Karpenter's instance profile kept the node role alive).
 chk "IAM roles $C*" "$(q iam list-roles --query "length(Roles[?starts_with(RoleName,'$C')])")"
 chk "IAM instance profiles $C* (incl. Karpenter)" "$(q iam list-instance-profiles --query "length(InstanceProfiles[?starts_with(InstanceProfileName,'$C')])")"
+# FIS: a running experiment is billed per action-minute; the template is free
+# but belongs to the stack.
+chk "FIS experiments running or initiating" "$(q fis list-experiments --query "length(experiments[?state.status=='running' || state.status=='initiating'])")"
+chk "FIS templates tagged Project=$P" "$(q fis list-experiment-templates --query "length(experimentTemplates[?tags.Project=='$P'])")"
 [ "$fail" = 0 ] && echo "TEARDOWN CLEAN" || echo "TEARDOWN NOT CLEAN: fix the LEFT lines before closing the session"
 exit "$fail"

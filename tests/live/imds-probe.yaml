@@ -1,0 +1,37 @@
+# Live #3: proves from inside a pod that the node's instance metadata (and so
+# the node role's credentials) is out of reach. EC2NodeClass sets IMDSv2
+# required with hop limit 1: the token PUT answer cannot cross the extra hop
+# of the pod network, so curl times out. Expected log: "IMDS BLOCKED".
+# Applied by hand, on a node of pool general; deleted before destroy.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: imds-probe
+  namespace: karpenter-test
+spec:
+  restartPolicy: Never
+  nodeSelector: {karpenter.sh/nodepool: general}
+  containers:
+    - name: curl
+      image: docker.io/curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+      command: ["sh", "-c"]
+      args:
+        - >-
+          if curl -s -m 5 -X PUT -H 'X-aws-ec2-metadata-token-ttl-seconds: 60'
+          http://169.254.169.254/latest/api/token >/dev/null;
+          then echo "IMDS REACHABLE"; exit 1; else echo "IMDS BLOCKED"; fi
+      resources:
+        requests: {cpu: 10m, memory: 16Mi}
+      securityContext:
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        privileged: false
+        capabilities:
+          drop:
+            - ALL
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 65535
+    runAsGroup: 65535
+    seccompProfile:
+      type: RuntimeDefault
