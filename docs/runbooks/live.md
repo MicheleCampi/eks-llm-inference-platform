@@ -52,6 +52,20 @@ application is Synced and Healthy.
 
 ## 4. Grafana as code and the secret
 
+Terraform creates `llm-inference/grafana-cloud-remote-write` empty, so its
+value is never in state. Put it before anything reads it (live #3: without
+it ESO reported `SecretSyncedError` and Alloy `CreateContainerConfigError`).
+Use a token of a Grafana Cloud access policy made for this session only
+(scope `metrics:write`, expiry 1 day) and delete the policy after step 9.
+The token is typed, never pasted in a file or a chat:
+
+    read -rsp 'Grafana token: ' T; echo
+    jq -n --arg url "$PROM_URL" --arg user "$PROM_USER" --arg token "$T" '{url:$url,user:$user,token:$token}' | aws secretsmanager put-secret-value --secret-id llm-inference/grafana-cloud-remote-write --secret-string file:///dev/stdin --query Name; unset T
+    kubectl -n monitoring annotate externalsecret grafana-cloud-credentials force-sync=$(date +%s) --overwrite
+
+`PROM_URL` is the remote-write URL and `PROM_USER` the instance id of the
+Prometheus data source (Grafana Cloud, stack details).
+
     gh workflow run observability.yml --ref v2.3.1
     gh run watch
 
@@ -128,7 +142,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     gh workflow run destroy.yml --ref v2.3.1
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
-and stay for the next session.
+and stay for the next session; the session's access policy (step 4) is deleted.
 
 ## 10. Verify nothing billable is left, then evidence
 
