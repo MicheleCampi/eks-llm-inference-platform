@@ -9,14 +9,18 @@ operator on EKS. Every result goes to `docs/evidence/live-<date>.md`.
 ## 0. Before (no spend)
 
 - A new BUDGET entry for live #3, with its cap, approved before step 2 of
-  `live.md`.
+  `live.md`. Done: A-017, cap 4,00 EUR, at most 4 hours from apply
+  (approved 2026-11-17).
 - `bash ci/simulate-apply-role.sh` PREFLIGHT PASS after the bootstrap change
   of this release (PassRole to `fis.amazonaws.com`), applied by hand in
   `bootstrap/ci-identity`.
 - The CPU image pre-check on a machine with Docker and 8 GB of RAM, free:
   the same command, env and 6 GB limit the operator gives the pod
   (`tests/live/inference-cpu.yaml`). If it does not answer, step 2 is skipped
-  and the reason recorded.
+  and the reason recorded. Done 2026-11-17 (`--memory 6g --cpus 2`): startup
+  complete, KV cache 349,440 tokens, HTTP 200, 4.88 GiB used, 3.9 s for 32
+  tokens warm. It needed operator `v0.12.0`: `v0.11.0` gave every `gpu: 0`
+  service the inert placeholder pod.
 - Drift is blocked 08:00-18:00 UTC on weekdays (`nodepool-general.yaml`):
   step 4 runs outside that window, or records that the budget held.
 

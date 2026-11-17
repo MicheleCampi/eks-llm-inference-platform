@@ -22,9 +22,11 @@ AppProjects and the root Application, from a release tag.
 IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
 the same operator project, deployed through an ArgoCD app-of-apps, on a
-different cloud. Both platforms pin the operator at release `v0.11.0`
-([`gitops/apps/vllm-coldstart-operator.yaml`](gitops/apps/vllm-coldstart-operator.yaml);
-GKE: [`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml)).
+different cloud. EKS pins the operator at release `v0.12.0`
+([`gitops/apps/vllm-coldstart-operator.yaml`](gitops/apps/vllm-coldstart-operator.yaml)),
+the first that serves a model on CPU (`gpu: 0` with `cpu` and `memory` set);
+GKE pins its own release in
+[`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml).
 
 **What ran live on EKS, and what did not.**
 
@@ -41,8 +43,12 @@ GKE: [`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-infer
   Explorer on 2026-11-17 (usage, before credits): 0.149 USD for the failed
   first attempt on 2026-11-14 and 1.195 USD for this run, against estimates
   of 0.10-0.15 and ~1.3 USD; both fully covered by account credits.
-- Not yet run on EKS: the operator at `v0.11.0`, and any model serving. CI
-  renders the `v0.11.0` chart with the values Argo CD deploys and checks it
+- Not yet run on EKS: the operator at `v0.12.0`, and any model serving. The
+  CPU workload of live #3 was run free in Docker on 2026-11-17 with the
+  command and 6 GiB limit the operator gives the pod: Qwen2.5-0.5B on the
+  vLLM CPU v0.11.2 image answered HTTP 200 using 4.88 GiB. That check found
+  that `v0.11.0` ran every `gpu: 0` service as an inert placeholder, fixed in
+  `v0.12.0`. CI renders the `v0.12.0` chart with the values Argo CD deploys and checks it
   against the Kyverno policies and the AppProject. GPU serving by the same
   operator was measured on GKE and on a 3x A10 fleet, see the operator repo.
 
@@ -254,7 +260,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.2.9                      # the release the cluster runs
+    git checkout v2.3.0                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
