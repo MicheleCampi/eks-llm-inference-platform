@@ -22,9 +22,10 @@ AppProjects and the root Application, from a release tag.
 IaC-to-GitOps LLM inference platform on AWS EKS, the AWS counterpart of
 [gke-llm-inference-platform](https://github.com/MicheleCampi/gke-llm-inference-platform):
 the same operator project, deployed through an ArgoCD app-of-apps, on a
-different cloud. EKS pins the operator at release `v0.12.0`
+different cloud. EKS pins the operator at release `v0.13.0`
 ([`gitops/apps/vllm-coldstart-operator.yaml`](gitops/apps/vllm-coldstart-operator.yaml)),
-the first that serves a model on CPU (`gpu: 0` with `cpu` and `memory` set);
+which serves a model on CPU (`gpu: 0` with `cpu` and `memory` set, since
+`v0.12.0`) and passes engine settings without a CLI flag through `spec.env`;
 GKE pins its own release in
 [`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-inference-platform/blob/main/argocd/apps/operator.yaml).
 
@@ -291,7 +292,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.1                      # the release the cluster runs
+    git checkout v2.3.2                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform

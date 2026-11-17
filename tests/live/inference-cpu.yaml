@@ -1,10 +1,10 @@
-# Live #3 inference workload: a real model served on CPU by the operator
-# (v0.12.0, gitops/apps/vllm-coldstart-operator.yaml) on pool general. gpu 0
-# with both cpu and memory set is what makes v0.12.0 serve instead of
-# creating its inert placeholder (v0.11.0 served nothing here). Free Docker
-# pre-check 2026-11-17, same command and 6g limit: HTTP 200, 4.88 GiB. Not
-# synced by Argo CD: applied by hand in the live session, deleted before
-# destroy, like inflate.yaml. NOT YET RUN on EKS.
+# Inference workload of the live runbook: a real model served on CPU by the
+# operator (v0.13.0, gitops/apps/vllm-coldstart-operator.yaml) on pool
+# general. gpu 0 with both cpu and memory set makes the operator serve
+# instead of creating its inert placeholder (since v0.12.0). Not synced by
+# Argo CD: applied by hand in the live session, deleted before destroy, like
+# inflate.yaml. Live #3 (2026-11-17): OOMKilled at 6Gi right after the 4 GiB
+# default KV cache (docs/evidence/live-2026-11-17.md); hence the env below.
 #
 # Why CPU: the Free Plan account cannot launch GPU types (README Findings #1),
 # so pool gpu is gated. Qwen2.5-0.5B-Instruct (Apache-2.0, ~1 GB of bf16
@@ -12,12 +12,9 @@
 # AVX-512) is the only free-tier type with room for 6Gi, so the request also
 # proves that Karpenter picks the instance type from the pod's needs.
 #
-# Open risks, to clear with a free pre-check on optim-dev (docker run with the
-# same command, env and 6g memory limit) before any spend:
-# - the operator sets LD_LIBRARY_PATH=/usr/local/nvidia/lib64 on every
-#   serving pod (a GPU fix); the CPU image must still start with it;
-# - VllmService has no env field, so VLLM_CPU_KVCACHE_SPACE keeps the image
-#   default; the KV cache must fit in the 6Gi limit with the weights.
+# Before the next live, a free pre-check on optim-dev: docker run with the
+# same command, VLLM_CPU_KVCACHE_SPACE=1 and a 6g limit, recording the peak
+# memory, not only the steady state.
 apiVersion: v1
 kind: Namespace
 metadata:
@@ -41,3 +38,8 @@ spec:
   memory: 6Gi
   healthPath: /health
   extraArgs: ["--max-model-len", "2048", "--dtype", "bfloat16"]
+  # vLLM CPU sizes its KV cache only from this variable (4 GiB by default,
+  # whatever the limit). 1 GiB holds ~87k tokens, ample for 2048.
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
