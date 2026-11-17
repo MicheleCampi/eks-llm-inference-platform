@@ -38,28 +38,40 @@ variables {
   public_access_cidrs      = ["203.0.113.0/24"]
 }
 
-run "fis_spot_interruption_is_scoped" {
+run "fis_off_by_default_on_free_plan" {
   command = apply
   module { source = "./modules/eks" }
   assert {
-    condition = (jsondecode(aws_iam_role.fis.assume_role_policy).Statement[0].Principal == { Service = "fis.amazonaws.com" }
-    && jsondecode(aws_iam_role.fis.assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "123456789012")
+    condition     = length(aws_fis_experiment_template.spot_interruption) == 0 && length(aws_iam_role.fis) == 0 && length(aws_iam_role_policy.fis) == 0
+    error_message = "FIS must be off by default: a Free Plan account cannot create the template"
+  }
+}
+
+run "fis_spot_interruption_is_scoped" {
+  command = apply
+  module { source = "./modules/eks" }
+  variables {
+    fis_enabled = true
+  }
+  assert {
+    condition = (jsondecode(aws_iam_role.fis[0].assume_role_policy).Statement[0].Principal == { Service = "fis.amazonaws.com" }
+    && jsondecode(aws_iam_role.fis[0].assume_role_policy).Statement[0].Condition.StringEquals["aws:SourceAccount"] == "123456789012")
     error_message = "the FIS role must trust only FIS, from this account"
   }
   assert {
-    condition     = aws_iam_role.fis.permissions_boundary == "arn:aws:iam::123456789012:policy/eks-llm-boundary"
+    condition     = aws_iam_role.fis[0].permissions_boundary == "arn:aws:iam::123456789012:policy/eks-llm-boundary"
     error_message = "the FIS role must carry the boundary"
   }
   assert {
-    condition = (jsondecode(aws_iam_role_policy.fis.policy).Statement[1].Action == "ec2:SendSpotInstanceInterruptions"
-      && jsondecode(aws_iam_role_policy.fis.policy).Statement[1].Condition.StringEquals["aws:ResourceTag/karpenter.sh/nodepool"] == "general"
-    && jsondecode(aws_iam_role_policy.fis.policy).Statement[1].Condition.StringEquals["aws:ResourceTag/eks:eks-cluster-name"] == "test")
+    condition = (jsondecode(aws_iam_role_policy.fis[0].policy).Statement[1].Action == "ec2:SendSpotInstanceInterruptions"
+      && jsondecode(aws_iam_role_policy.fis[0].policy).Statement[1].Condition.StringEquals["aws:ResourceTag/karpenter.sh/nodepool"] == "general"
+    && jsondecode(aws_iam_role_policy.fis[0].policy).Statement[1].Condition.StringEquals["aws:ResourceTag/eks:eks-cluster-name"] == "test")
     error_message = "the FIS role may interrupt only Spot nodes of pool general of this cluster"
   }
   assert {
-    condition = (one(aws_fis_experiment_template.spot_interruption.target).selection_mode == "COUNT(1)"
-      && one(aws_fis_experiment_template.spot_interruption.target).resource_type == "aws:ec2:spot-instance"
-    && one(aws_fis_experiment_template.spot_interruption.action).action_id == "aws:ec2:send-spot-instance-interruptions")
+    condition = (one(aws_fis_experiment_template.spot_interruption[0].target).selection_mode == "COUNT(1)"
+      && one(aws_fis_experiment_template.spot_interruption[0].target).resource_type == "aws:ec2:spot-instance"
+    && one(aws_fis_experiment_template.spot_interruption[0].action).action_id == "aws:ec2:send-spot-instance-interruptions")
     error_message = "the template must send a Spot interruption to exactly one Spot instance"
   }
 }

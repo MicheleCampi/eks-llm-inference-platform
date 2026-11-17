@@ -64,3 +64,9 @@ variable "cluster_admin_principal_arns" {
     error_message = "cluster_admin_principal_arns must be IAM user or role ARNs, without wildcards."
   }
 }
+
+variable "fis_enabled" {
+  description = "Create the AWS FIS Spot interruption template and its role (chaos.tf). Off by default: AWS Free Plan accounts get SubscriptionRequiredException from FIS, so creating the template fails the apply. Turn on for an account with FIS access."
+  type        = bool
+  default     = false
+}

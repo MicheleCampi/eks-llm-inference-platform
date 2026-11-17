@@ -72,7 +72,7 @@ same secret-name-matches-terraform \
   "$(yq 'select(.kind=="ExternalSecret") | .spec.data[].remoteRef.key' gitops/monitoring/grafana-secret.yaml | sort -u)" \
   "$(sed -n -E 's/^  default += "(.*)"$/\1/p' variables.tf | sed -n 2p)/grafana-cloud-remote-write"
 KV=$(yq '.spec.source.targetRevision' gitops/apps/karpenter.yaml)
-check karpenter-render sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system --set settings.clusterName=x --include-crds > '$W/karpenter-render.yaml' 2>/dev/null"
+check karpenter-render retry sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system --set settings.clusterName=x --include-crds > '$W/karpenter-render.yaml' 2>/dev/null"
 same karpenter-metrics-port \
   "$(yq 'select(.kind=="Service" and .metadata.name=="karpenter") | .spec.ports[].name' "$W/karpenter-render.yaml")" http-metrics
 
@@ -146,7 +146,7 @@ mkdir -p "$W/charts" "$W/neg-chart"
 yq '.spec.source.helm.valuesObject' gitops/apps/kyverno.yaml > "$W/kyv-values.yaml"
 yq '.spec.source.helm.valuesObject' gitops/apps/karpenter.yaml > "$W/karp-values.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests -f "$W/kyv-values.yaml" > "$W/charts/kyverno.yaml"
-check karpenter-deployed-render sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system -f '$W/karp-values.yaml' > '$W/charts/karpenter.yaml' 2>/dev/null"
+check karpenter-deployed-render retry sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system -f '$W/karp-values.yaml' > '$W/charts/karpenter.yaml' 2>/dev/null"
 cp "$W/eso-deployed.yaml" "$W/charts/eso.yaml"; cp "$W/alloy-render.yaml" "$W/charts/alloy.yaml"; cp "$W/ksm-render.yaml" "$W/charts/ksm.yaml"; cp "$W/op-deployed.yaml" "$W/charts/operator.yaml"
 TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile ci/trivyignore-charts.yaml)
 check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.4.3.yaml' | sha256sum -c -"
@@ -170,6 +170,10 @@ mkdir -p "$W/schemas/inference.michelecampi.dev" && (cd "$W/schemas/inference.mi
 check live-inference-schema "${KC[@]}" tests/live/inference-cpu.yaml
 check live-inference-complies "${KY[@]}" --resource tests/live/inference-cpu.yaml
 check live-imds-probe-complies "${KY[@]}" --resource tests/live/imds-probe.yaml
+# Live #3 without FIS: the injected Spot warning must parse as Karpenter
+# v1.15.1 parses it (version 0, source aws.ec2, that detail-type, the
+# instance in detail.instance-id), or Karpenter drops it as unknown.
+check live-spot-message sh -c "bash tests/live/spot-interruption.sh --print i-0123456789abcdef0 | python3 -c 'import json,sys; m=json.load(sys.stdin); assert (m[\"version\"],m[\"source\"],m[\"detail-type\"])==(\"0\",\"aws.ec2\",\"EC2 Spot Instance Interruption Warning\"), m; assert m[\"detail\"][\"instance-id\"]==\"i-0123456789abcdef0\" and m[\"resources\"][0].endswith(\"/i-0123456789abcdef0\"), m'"
 yq 'select(.kind=="VllmService") | .spec.gpuz = 0' tests/live/inference-cpu.yaml > "$W/neg-vllm.yaml"
 expect_reject neg-vllmservice-unknown-field "additional properties 'gpuz' not allowed" "${KC[@]}" "$W/neg-vllm.yaml"
 # Scaled as in live #3 (5 replicas): allowed, because its PDB exists.

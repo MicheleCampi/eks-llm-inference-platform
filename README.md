@@ -240,6 +240,12 @@ tag; everything else reconciles from Git.
    client-side apply.
 3. **CRD `ignoreDifferences` generalized** after fleet CRDs (ADR-0003)
    were added post-GKE: fixed in Git, reconciled by ArgoCD - no kubectl.
+4. **Free Plan accounts have no AWS FIS.** `fis list-experiment-templates`
+   answers `SubscriptionRequiredException` (2026-11-17), so creating the
+   template would fail the apply; found by `scripts/verify-teardown.sh` in
+   the free pre-flight, before any spend. `fis_enabled` (default false) gates
+   `modules/eks/chaos.tf`; live #3 injects the Spot interruption warning on
+   Karpenter's real queue instead (`tests/live/spot-interruption.sh`).
 
 ## Bootstrap (one-time, out-of-band)
 
@@ -260,7 +266,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.0                      # the release the cluster runs
+    git checkout v2.3.1                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
@@ -293,8 +299,9 @@ runbook `docs/runbooks/live.md`): `terraform apply` and destroy from the
 pipeline, Karpenter scaling to 4 Spot nodes on 2 AZs and consolidation to 0,
 the NodePool CPU limit alert by email, a privileged pod rejected at
 admission, requests against usage, and a clean teardown.
-Prepared, not yet run: a real Spot interruption through AWS FIS
-(`modules/eks/chaos.tf`), drift within the budgets, the PDB honoured during
+Prepared, not yet run: a Spot interruption warning injected on Karpenter's
+real queue (`tests/live/spot-interruption.sh`; AWS FIS in
+`modules/eks/chaos.tf` is off on this Free Plan account), drift within the budgets, the PDB honoured during
 a drain, IMDS blocked from a pod and a model served on CPU by the operator;
 see `docs/runbooks/live-3.md`.
 

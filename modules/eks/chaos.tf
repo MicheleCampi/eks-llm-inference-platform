@@ -7,8 +7,13 @@
 # live session: aws fis start-experiment --experiment-template-id <id>.
 # No stop condition: one notice to one node cannot spread, and Grafana Cloud
 # alerts are not CloudWatch alarms, which is all FIS can stop on.
+# Gated by var.fis_enabled, off by default: an AWS Free Plan account (this
+# one) gets SubscriptionRequiredException from FIS, and the apply would fail
+# on the template. There, live #3 sends the same interruption warning as an
+# EventBridge event to Karpenter's real queue instead (tests/live/).
 
 resource "aws_iam_role" "fis" {
+  count                = var.fis_enabled ? 1 : 0
   name                 = "${var.cluster_name}-fis"
   permissions_boundary = var.permissions_boundary_arn
   assume_role_policy = jsonencode({
@@ -26,8 +31,9 @@ data "aws_caller_identity" "fis" {}
 
 # Only Spot instances of this cluster's pool "general" can be interrupted.
 resource "aws_iam_role_policy" "fis" {
-  name = "${var.cluster_name}-fis"
-  role = aws_iam_role.fis.id
+  count = var.fis_enabled ? 1 : 0
+  name  = "${var.cluster_name}-fis"
+  role  = aws_iam_role.fis[0].id
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -49,8 +55,9 @@ resource "aws_iam_role_policy" "fis" {
 data "aws_partition" "fis" {}
 
 resource "aws_fis_experiment_template" "spot_interruption" {
+  count       = var.fis_enabled ? 1 : 0
   description = "Spot interruption notice to one running Spot node of NodePool general (live #3)"
-  role_arn    = aws_iam_role.fis.arn
+  role_arn    = aws_iam_role.fis[0].arn
 
   stop_condition {
     source = "none"

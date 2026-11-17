@@ -20,6 +20,8 @@ module "eks" {
   # Free Plan accounts restrict EC2 to free-tier-eligible types only
   # (t3.medium rejected with InvalidParameterCombination at ASG launch).
   node_instance_types = ["m7i-flex.large"]
+
+  fis_enabled = var.fis_enabled
 }
 
 # Every IAM role of the stack carries this boundary. It is created in
