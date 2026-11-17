@@ -1,6 +1,7 @@
 # Live #3 runbook: Karpenter under real disruption, and a real model
 
-NOT YET RUN. Runs after `docs/runbooks/live.md` steps 0-8 on the same
+RUN on 2026-11-17 ([evidence](../evidence/live-2026-11-17.md)): steps 1, 3
+and 4 passed; step 2 did not serve (OOMKilled, see the note there). Runs after `docs/runbooks/live.md` steps 0-8 on the same
 session, before its step 9 (destroy). It proves what attempt 2 (2026-11-15)
 did not: a Spot interruption handled end to end (warning injected on the
 real queue, since this account has no FIS), drift within budgets, the PodDisruptionBudget
@@ -48,6 +49,13 @@ room for 6Gi), the VllmService Ready; record the time from apply to Ready.
 
 Expected: 20 answers 200; record p50 and max. CPU latency, not a GPU benchmark.
 
+Live #3: the NodeClaim was `m7i-flex.large` as expected, but the pod was
+OOMKilled (exit 137) right after allocating the KV cache: vLLM CPU reserves
+`VLLM_CPU_KVCACHE_SPACE` (4 GiB by default) whatever the limit. A 6900Mi
+limit stayed Pending, because the NodePool CPU limit was reached. Run this
+step again once the operator passes `env` and the example sets
+`VLLM_CPU_KVCACHE_SPACE=1`.
+
 ## 3. Spot interruption and the PDB (warning injected on the real queue)
 
 AWS FIS is not available on this account (AWS Free Plan:
@@ -72,16 +80,30 @@ emits the warning and reclaims the instance; on an account with FIS, set
 
 ## 4. Drift within the budget
 
-Turn off selfHeal of `karpenter-nodes`, then change the NodeClass so that
-every node drifts, as an AMI bump would:
+Turn off automated sync of `root` (it restores the sync policy of its
+children) and of `karpenter-nodes`, then change the NodeClass so that every
+node drifts, as an AMI bump would:
 
+    kubectl -n argocd patch application root --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl patch ec2nodeclass default --type merge -p '{"spec":{"tags":{"DriftTest":"live3"}}}'
     kubectl get nodeclaims -o custom-columns=NAME:.metadata.name,DRIFTED:.status.conditions[?(@.type==\"Drifted\")].status -w
 
 Expected: outside the blocked window, nodes replaced at most 20% at a time;
-inside it, `Drifted=True` and no replacement. Then restore with
-`kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'`.
+inside it, `Drifted=True` and no replacement. Then remove the tag by hand:
+Argo CD does not, because its default diff ignores a key Git does not
+declare (live #3, README Findings #6). Then restore both sync policies:
+
+    kubectl patch ec2nodeclass default --type json -p '[{"op":"remove","path":"/spec/tags/DriftTest"}]'
+    kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
+
+and the root app as `gitops/root-app.yaml` declares it
+(`kubectl apply -f gitops/root-app.yaml`).
+
+To find Karpenter's log of the interruption, read every line of both
+replicas (`kubectl logs -l` keeps only 10 lines per pod by default):
+
+    kubectl -n kube-system logs -l app.kubernetes.io/name=karpenter --tail=-1 --since=30m | grep -i interrupt
 
 ## 5. Then
 

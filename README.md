@@ -43,12 +43,19 @@ GKE pins its own release in
   Explorer on 2026-11-17 (usage, before credits): 0.149 USD for the failed
   first attempt on 2026-11-14 and 1.195 USD for this run, against estimates
   of 0.10-0.15 and ~1.3 USD; both fully covered by account credits.
-- Not yet run on EKS: the operator at `v0.12.0`, and any model serving. The
-  CPU workload of live #3 was run free in Docker on 2026-11-17 with the
-  command and 6 GiB limit the operator gives the pod: Qwen2.5-0.5B on the
-  vLLM CPU v0.11.2 image answered HTTP 200 using 4.88 GiB. That check found
-  that `v0.11.0` ran every `gpu: 0` service as an inert placeholder, fixed in
-  `v0.12.0`. CI renders the `v0.12.0` chart with the values Argo CD deploys and checks it
+- 2026-11-17, live #3 ([evidence](docs/evidence/live-2026-11-17.md)):
+  Karpenter under real disruption. A Spot interruption warning on its real
+  SQS queue gave a replacement node Ready in 53 s with the PDB never below 0;
+  drift replaced 3 nodes one at a time within the 20% budget; IMDS was
+  blocked from a pod; the NodePool CPU limit and the gated `gpu` pool both
+  refused a node. The operator `v0.12.0`, deployed by Argo CD, created the
+  CPU model pod on a Karpenter `m7i-flex.large` Spot node, but the pod was
+  OOMKilled: vLLM CPU reserves a fixed 4 GiB KV cache (Findings #5).
+- Not yet run on EKS: a model answering. The CPU workload was run free in
+  Docker on 2026-11-17 with the command and 6 GiB limit the operator gives
+  the pod: Qwen2.5-0.5B on the vLLM CPU v0.11.2 image answered HTTP 200
+  using 4.88 GiB. That check found that `v0.11.0` ran every `gpu: 0` service
+  as an inert placeholder, fixed in `v0.12.0`. CI renders the `v0.12.0` chart with the values Argo CD deploys and checks it
   against the Kyverno policies and the AppProject. GPU serving by the same
   operator was measured on GKE and on a 3x A10 fleet, see the operator repo.
 
@@ -246,6 +253,18 @@ tag; everything else reconciles from Git.
    the free pre-flight, before any spend. `fis_enabled` (default false) gates
    `modules/eks/chaos.tf`; live #3 injects the Spot interruption warning on
    Karpenter's real queue instead (`tests/live/spot-interruption.sh`).
+5. **vLLM CPU sizes its KV cache only from `VLLM_CPU_KVCACHE_SPACE`**
+   (4 GiB by default, no CLI flag). On EKS the 6Gi pod was OOMKilled right
+   after the allocation, though the same limit held in Docker; a larger
+   limit did not fit because the NodePool CPU limit was reached (live #3).
+   The operator needs to pass `env` to the container.
+6. **Argo CD's default diff ignores keys that Git does not declare.** A tag
+   added by hand to `EC2NodeClass default` stayed, and `karpenter-nodes`
+   stayed Synced with selfHeal on (live #3). Out-of-band changes need
+   server-side diff and an admission policy, not only selfHeal.
+7. **The Grafana remote-write secret is created empty** and its value was
+   not in the runbook: ESO and Alloy failed until it was put (live #3). Now
+   step 4 of `docs/runbooks/live.md`, with a dedicated, short-lived token.
 
 ## Bootstrap (one-time, out-of-band)
 
@@ -299,11 +318,13 @@ runbook `docs/runbooks/live.md`): `terraform apply` and destroy from the
 pipeline, Karpenter scaling to 4 Spot nodes on 2 AZs and consolidation to 0,
 the NodePool CPU limit alert by email, a privileged pod rejected at
 admission, requests against usage, and a clean teardown.
-Prepared, not yet run: a Spot interruption warning injected on Karpenter's
-real queue (`tests/live/spot-interruption.sh`; AWS FIS in
-`modules/eks/chaos.tf` is off on this Free Plan account), drift within the budgets, the PDB honoured during
-a drain, IMDS blocked from a pod and a model served on CPU by the operator;
-see `docs/runbooks/live-3.md`.
+Checked live on 2026-11-17 ([evidence](docs/evidence/live-2026-11-17.md),
+runbook `docs/runbooks/live-3.md`): a Spot interruption warning injected on
+Karpenter's real queue (`tests/live/spot-interruption.sh`; AWS FIS in
+`modules/eks/chaos.tf` is off on this Free Plan account), drift within the
+budgets, the PDB honoured during a drain, IMDS blocked from a pod, the
+NodePool cost caps, and a clean teardown. Not served: the CPU model
+(Findings #5).
 
 ## Production gaps
 
