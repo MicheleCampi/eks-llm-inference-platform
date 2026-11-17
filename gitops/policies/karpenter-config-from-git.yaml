@@ -1,0 +1,33 @@
+# NodePools and EC2NodeClasses change only through Git (live #3, README
+# Findings #6): Argo CD's diff ignores a key Git does not declare, so a tag
+# added by hand stayed and the Application stayed Synced. Admission closes
+# that gap: only Argo CD's application controller and Karpenter itself
+# (hash annotations, finalizers) may create or update them. Status is a
+# subresource and is not matched. DELETE stays allowed, for the teardown of
+# docs/runbooks/live.md. A human change is break-glass and audited:
+#   kubectl --as=system:serviceaccount:argocd:argocd-application-controller ...
+# (impersonation is recorded with the real user in the EKS audit log).
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: karpenter-config-from-git
+  annotations:
+    policies.kyverno.io/description: NodePool and EC2NodeClass change only through Argo CD.
+spec:
+  validationActions: [Deny]
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [karpenter.sh]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [nodepools]
+      - apiGroups: [karpenter.k8s.aws]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [ec2nodeclasses]
+  validations:
+    - expression: >-
+        request.userInfo.username in [
+          'system:serviceaccount:argocd:argocd-application-controller',
+          'system:serviceaccount:kube-system:karpenter']
+      messageExpression: "'NodePool and EC2NodeClass change only through Git (Argo CD); denied for ' + request.userInfo.username"

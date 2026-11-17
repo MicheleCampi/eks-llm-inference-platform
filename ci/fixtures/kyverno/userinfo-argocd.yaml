@@ -1,0 +1,6 @@
+# Fixture for ci/validate-gitops.sh: the requester kyverno apply evaluates.
+apiVersion: cli.kyverno.io/v1alpha1
+kind: UserInfo
+metadata: {name: argocd}
+userInfo:
+  username: "system:serviceaccount:argocd:argocd-application-controller"
