@@ -128,6 +128,10 @@ check platform-complies "${KY[@]}" --resource "$W/eso-deployed.yaml" --resource 
 grep -h '^pass' "$W/platform-complies.log" | sed 's/^/  /'
 check exempt-namespace-ignored "${KY[@]}" --resource ci/fixtures/kyverno/exempt.yaml
 grep -q 'pass: 0, fail: 0' "$W/exempt-namespace-ignored.log" || { echo "FAIL exempt-namespace-ignored: the kube-system pod was evaluated"; fail=1; }
+# karpenter-config-from-git: Argo CD may apply every NodePool and EC2NodeClass in Git.
+KC=(--resource gitops/karpenter/ec2nodeclass.yaml --resource gitops/karpenter/ec2nodeclass-gpu.yaml --resource gitops/karpenter/nodepool-general.yaml --resource gitops/karpenter/nodepool-gpu.yaml)
+check karpenter-config-argocd "${KY[@]}" -u ci/fixtures/kyverno/userinfo-argocd.yaml "${KC[@]}"
+grep -q 'pass: 4, fail: 0' "$W/karpenter-config-argocd.log" || { echo "FAIL karpenter-config-argocd: expected 4 passes"; fail=1; }
 
 echo "== EKS add-on configurations against the AWS schemas"
 check addon-config "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/addon-config.py modules/eks/addons ci/schemas modules/eks/addons.tf modules/eks/karpenter.tf
@@ -257,6 +261,7 @@ expect_reject neg-policy-pdb-missing "needs a PodDisruptionBudget" "${KY[@]}" --
 expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
 expect_reject neg-policy-team-mismatch "must equal the namespace name" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-mismatch.yaml
 expect_reject neg-policy-team-missing "namespaces must carry" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-missing.yaml
+expect_reject neg-karpenter-config-by-hand "change only through Git (Argo CD); denied for kubernetes-admin" "${KY[@]}" -u ci/fixtures/kyverno/userinfo-human.yaml "${KC[@]}"
 expect_reject neg-platform-without-requests "require-requests -> resource external-secrets/Deployment/external-secrets" "${KY[@]}" --resource "$W/eso-render.yaml"
 expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
 

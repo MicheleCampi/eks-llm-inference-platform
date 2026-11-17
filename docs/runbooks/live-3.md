@@ -82,11 +82,14 @@ emits the warning and reclaims the instance; on an account with FIS, set
 
 Turn off automated sync of `root` (it restores the sync policy of its
 children) and of `karpenter-nodes`, then change the NodeClass so that every
-node drifts, as an AMI bump would:
+node drifts, as an AMI bump would. `karpenter-config-from-git` denies a
+change by hand, so the test changes it as Argo CD (audited impersonation:
+the EKS audit log records the real user); without `--as` the patch must be
+denied, which is the first check of this step:
 
     kubectl -n argocd patch application root --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":null}}'
-    kubectl patch ec2nodeclass default --type merge -p '{"spec":{"tags":{"DriftTest":"live3"}}}'
+    kubectl patch ec2nodeclass default --type merge -p '{"spec":{"tags":{"DriftTest":"live3"}}}' --as=system:serviceaccount:argocd:argocd-application-controller
     kubectl get nodeclaims -o custom-columns=NAME:.metadata.name,DRIFTED:.status.conditions[?(@.type==\"Drifted\")].status -w
 
 Expected: outside the blocked window, nodes replaced at most 20% at a time;
@@ -94,7 +97,7 @@ inside it, `Drifted=True` and no replacement. Then remove the tag by hand:
 Argo CD does not, because its default diff ignores a key Git does not
 declare (live #3, README Findings #6). Then restore both sync policies:
 
-    kubectl patch ec2nodeclass default --type json -p '[{"op":"remove","path":"/spec/tags/DriftTest"}]'
+    kubectl patch ec2nodeclass default --type json -p '[{"op":"remove","path":"/spec/tags/DriftTest"}]' --as=system:serviceaccount:argocd:argocd-application-controller
     kubectl -n argocd patch application karpenter-nodes --type merge -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}'
 
 and the root app as `gitops/root-app.yaml` declares it

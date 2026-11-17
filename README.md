@@ -139,7 +139,7 @@ tag; everything else reconciles from Git.
   records them (core `nodeclaim/lifecycle`); NotReady from
   kube-state-metrics, with only the Ready condition shipped. Not yet applied
   live.
-- **Admission policies with Kyverno, enforced.** Five `ValidatingPolicy`
+- **Admission policies with Kyverno, enforced.** Six `ValidatingPolicy`
   (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
   in chart 3.10.0) deny images without a version tag or digest, containers
   without CPU and memory requests, and privileged containers, for Pods and
@@ -150,6 +150,9 @@ tag; everything else reconciles from Git.
   live; in CI a context file stands in for the cluster). With the NodePools'
   1h `terminationGracePeriod`, a PDB slows a drain but cannot block it.
   `require-pdb` does not see the scale subresource (`kubectl scale`, HPA).
+  NodePools and EC2NodeClasses are created or updated only by Argo CD's
+  application controller and by Karpenter (`karpenter-config-from-git`,
+  Findings #6); DELETE stays open for the teardown.
   Exempt, with
   the reason in the policy: `kube-system`,
   `kyverno`, and `argocd` (installed from the upstream manifest). The platform
@@ -260,8 +263,11 @@ tag; everything else reconciles from Git.
    The operator needs to pass `env` to the container.
 6. **Argo CD's default diff ignores keys that Git does not declare.** A tag
    added by hand to `EC2NodeClass default` stayed, and `karpenter-nodes`
-   stayed Synced with selfHeal on (live #3). Out-of-band changes need
-   server-side diff and an admission policy, not only selfHeal.
+   stayed Synced with selfHeal on (live #3). Server-side diff would not
+   catch it either: server-side apply leaves fields another manager owns.
+   The control is at admission: `karpenter-config-from-git` lets only Argo
+   CD and Karpenter create or update NodePools and EC2NodeClasses; a human
+   change is audited impersonation (break-glass).
 7. **The Grafana remote-write secret is created empty** and its value was
    not in the runbook: ESO and Alloy failed until it was put (live #3). Now
    step 4 of `docs/runbooks/live.md`, with a dedicated, short-lived token.
