@@ -11,7 +11,7 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: v2.3.0
+    targetRevision: v2.3.1
     path: gitops/monitoring
   destination:
     server: https://kubernetes.default.svc

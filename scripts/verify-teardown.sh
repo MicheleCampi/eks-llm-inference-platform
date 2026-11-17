@@ -22,7 +22,11 @@ chk "IAM roles $C*" "$(q iam list-roles --query "length(Roles[?starts_with(RoleN
 chk "IAM instance profiles $C* (incl. Karpenter)" "$(q iam list-instance-profiles --query "length(InstanceProfiles[?starts_with(InstanceProfileName,'$C')])")"
 # FIS: a running experiment is billed per action-minute; the template is free
 # but belongs to the stack.
-chk "FIS experiments running or initiating" "$(q fis list-experiments --query "length(experiments[?state.status=='running' || state.status=='initiating'])")"
-chk "FIS templates tagged Project=$P" "$(q fis list-experiment-templates --query "length(experimentTemplates[?tags.Project=='$P'])")"
+# On an account without FIS (AWS Free Plan: SubscriptionRequiredException)
+# nothing FIS can exist, so that answer counts as 0; any other error is ERR.
+fq() { local o; o=$(aws --region "$R" --output text "$@" 2>&1) && echo "$o" && return
+  case "$o" in *SubscriptionRequiredException*) echo 0 ;; *) echo "$o" >&2; echo ERR ;; esac; }
+chk "FIS experiments running or initiating" "$(fq fis list-experiments --query "length(experiments[?state.status=='running' || state.status=='initiating'])")"
+chk "FIS templates tagged Project=$P" "$(fq fis list-experiment-templates --query "length(experimentTemplates[?tags.Project=='$P'])")"
 [ "$fail" = 0 ] && echo "TEARDOWN CLEAN" || echo "TEARDOWN NOT CLEAN: fix the LEFT lines before closing the session"
 exit "$fail"

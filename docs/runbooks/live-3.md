@@ -2,7 +2,8 @@
 
 NOT YET RUN. Runs after `docs/runbooks/live.md` steps 0-8 on the same
 session, before its step 9 (destroy). It proves what attempt 2 (2026-11-15)
-did not: a real Spot interruption, drift within budgets, the PodDisruptionBudget
+did not: a Spot interruption handled end to end (warning injected on the
+real queue, since this account has no FIS), drift within budgets, the PodDisruptionBudget
 honoured during a drain, IMDS blocked from a pod, and a model served by the
 operator on EKS. Every result goes to `docs/evidence/live-<date>.md`.
 
@@ -47,19 +48,27 @@ room for 6Gi), the VllmService Ready; record the time from apply to Ready.
 
 Expected: 20 answers 200; record p50 and max. CPU latency, not a GPU benchmark.
 
-## 3. Spot interruption and the PDB (AWS FIS)
+## 3. Spot interruption and the PDB (warning injected on the real queue)
 
-    aws fis list-experiment-templates --query "experimentTemplates[?tags.Project=='eks-llm-inference-platform'].id" --output text
+AWS FIS is not available on this account (AWS Free Plan:
+`SubscriptionRequiredException`, checked 2026-11-17), so `fis_enabled` is
+false and no FIS template exists. The warning AWS would send is injected
+instead, shaped exactly as EventBridge delivers it, on Karpenter's real SQS
+queue; the rest of the path is the production one.
+
     kubectl -n karpenter-test get pdb inflate -w &
-    aws fis start-experiment --experiment-template-id <id>
+    bash tests/live/spot-interruption.sh
     kubectl get nodeclaims -w
 
-Expected: within 2 minutes Karpenter receives the notice on its queue,
-`KarpenterSpotInterruption` fires (ticket), the node is cordoned and drained
+Expected: within a minute Karpenter reads the warning from its queue
+(`karpenter_interruption_received_messages_total{message_type="spot_interrupted"}`
++1, `KarpenterSpotInterruption` fires, ticket), cordons and drains the node
 with at most one inflate pod unavailable at a time (`ALLOWED DISRUPTIONS`
-never below 0), a replacement NodeClaim is launched, and the old instance is
-reclaimed. If the node held the model, record how long it was not Ready
-(one replica, no PDB: an expected outage).
+never below 0), launches a replacement NodeClaim and terminates the old
+instance itself. If the node held the model, record how long it was not
+Ready (one replica, no PDB: an expected outage). Not proven here: that AWS
+emits the warning and reclaims the instance; on an account with FIS, set
+`fis_enabled = true` and run the template of `modules/eks/chaos.tf` instead.
 
 ## 4. Drift within the budget
 
@@ -78,4 +87,5 @@ inside it, `Drifted=True` and no replacement. Then restore with
 
 `live.md` step 9, with `kubectl delete -f tests/live/inference-cpu.yaml -f
 tests/live/imds-probe.yaml` first. `scripts/verify-teardown.sh` also checks
-that no FIS experiment is running and no FIS template is left.
+that no FIS experiment is running and no FIS template is left (0 on an
+account without FIS).

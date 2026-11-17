@@ -62,3 +62,9 @@ variable "cluster_admin_iam_users" {
     error_message = "cluster_admin_iam_users must be plain IAM user names, without wildcards or paths."
   }
 }
+
+variable "fis_enabled" {
+  description = "Create the AWS FIS Spot interruption template (modules/eks/chaos.tf). Off by default: this account is on the AWS Free Plan, where FIS answers SubscriptionRequiredException (checked 2026-11-17)."
+  type        = bool
+  default     = false
+}
