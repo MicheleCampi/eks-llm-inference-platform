@@ -37,7 +37,10 @@ GKE: [`argocd/apps/operator.yaml`](https://github.com/MicheleCampi/gke-llm-infer
   layer (Karpenter, ESO, Alloy, Kyverno, alerts, teardown), with a `pause`
   pod as load. The operator Application (then `v0.4.0`) was in the
   app-of-apps, but the evidence records nothing about it, so nothing about
-  the operator is claimed from that run.
+  the operator is claimed from that run. Real cost, read from AWS Cost
+  Explorer on 2026-11-17 (usage, before credits): 0.149 USD for the failed
+  first attempt on 2026-11-14 and 1.195 USD for this run, against estimates
+  of 0.10-0.15 and ~1.3 USD; both fully covered by account credits.
 - Not yet run on EKS: the operator at `v0.11.0`, and any model serving. CI
   renders the `v0.11.0` chart with the values Argo CD deploys and checks it
   against the Kyverno policies and the AppProject. GPU serving by the same
@@ -95,7 +98,7 @@ tag; everything else reconciles from Git.
   Production sets `per_az`. VPC endpoints alone are not enough: the Karpenter
   chart comes from public.ecr.aws. The S3 gateway endpoint (free) keeps ECR
   layer pulls off the NAT. Tested in `modules/vpc/tests/nat.tftest.hcl`;
-  not yet applied live.
+  applied live on 2026-11-15 (one NAT, removed at teardown).
 - **CPU-only nodes; example VLLMService disabled.** This capstone proves the
   IaC->GitOps->operator chain. GPU serving behavior of the same operator is
   measured elsewhere (3x A10 fleet: replacement Ready in 57s, make-before-break,
@@ -140,8 +143,9 @@ tag; everything else reconciles from Git.
   obeys the same rules: ESO and Alloy get starting requests, to be checked
   against usage measured live. `ci/validate-gitops.sh` runs the Kyverno CLI
   (v1.20.0, SHA-256 pinned) on ESO, Alloy and the operator rendered with the
-  values ArgoCD deploys, and on fixtures that must be rejected. Not yet
-  applied live.
+  values ArgoCD deploys, and on fixtures that must be rejected. Applied live
+  on 2026-11-15, when a privileged pod was rejected at admission; `require-pdb`
+  came later and is not yet applied live.
 - **Right-sizing as a continuous FinOps loop.** metrics-server runs as an EKS
   managed add-on, pinned (v0.9.1-eksbuild.1), with 2 replicas across zones and
   a PodDisruptionBudget declared, so `kubectl top` and the HPA survive a node
@@ -278,8 +282,11 @@ Every check runs offline of AWS, with no credentials, the same way in CI (`.gith
 Against the real AWS account, on every pull request: `terraform plan` through
 GitHub OIDC (read-only role, see above).
 
-Not yet checked: `terraform apply` and the live behaviour (Karpenter scaling,
-consolidation, alerts, policies at admission); see `docs/runbooks/live.md`.
+Checked live on 2026-11-15 ([evidence](docs/evidence/live-2026-11-15.md),
+runbook `docs/runbooks/live.md`): `terraform apply` and destroy from the
+pipeline, Karpenter scaling to 4 Spot nodes on 2 AZs and consolidation to 0,
+the NodePool CPU limit alert by email, a privileged pod rejected at
+admission, requests against usage, and a clean teardown.
 Prepared, not yet run: a real Spot interruption through AWS FIS
 (`modules/eks/chaos.tf`), drift within the budgets, the PDB honoured during
 a drain, IMDS blocked from a pod and a model served on CPU by the operator;
