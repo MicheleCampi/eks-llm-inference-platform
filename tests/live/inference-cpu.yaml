@@ -1,5 +1,8 @@
 # Live #3 inference workload: a real model served on CPU by the operator
-# (v0.11.0, gitops/apps/vllm-coldstart-operator.yaml) on pool general. Not
+# (v0.12.0, gitops/apps/vllm-coldstart-operator.yaml) on pool general. gpu 0
+# with both cpu and memory set is what makes v0.12.0 serve instead of
+# creating its inert placeholder (v0.11.0 served nothing here). Free Docker
+# pre-check 2026-11-17, same command and 6g limit: HTTP 200, 4.88 GiB. Not
 # synced by Argo CD: applied by hand in the live session, deleted before
 # destroy, like inflate.yaml. NOT YET RUN on EKS.
 #
