@@ -1,6 +1,6 @@
 # Game day #1: incident response on the EKS inference platform
 
-Status: **designed, not run**. Written with the nodes off (D-0158, 2026-11-18).
+Status: **designed and prepared, not run**. Written with the nodes off (D-0158, 2026-11-18).
 It runs as live #5, only after its own BUDGET entry and an explicit go from
 the operator. Results go to `docs/evidence/gameday-<date>.md` and one
 blameless postmortem per scenario (`postmortem-template.md`).
@@ -17,7 +17,7 @@ pull requests.
 
 ## 1. The service under test and its SLO
 
-Service: `qwen-0-5b-cpu` (VllmService, `tests/live/inference-cpu.yaml`),
+Service: `qwen-0-5b-cpu` (VllmService, `tests/gameday/model.yaml`),
 **2 replicas** on pool `general`, one per Spot `m7i-flex.large` node, behind
 the ClusterIP Service the operator creates. A CPU model: a functional
 service, not a performance benchmark (the Free Plan account has no GPU,
@@ -60,27 +60,32 @@ Black-box measurement at the client is the standard SLI for availability:
 it sees requests lost before a replica, which vLLM's own `/metrics` cannot
 (slo-policy.md, "What the objectives do not see").
 
-Prerequisite pull request (PR B, before the BUDGET entry), each item with a
-CI check:
+Prerequisites, each with a CI check in `ci/validate-gitops.sh` (done offline,
+2026-11-18):
 
-1. `tests/gameday/probe.yaml` and `scripts/gameday-sli.py` (with a unit test
-   on a fixture log).
-2. A PodDisruptionBudget for the 2 replicas, `minAvailable: 1`, in
-   `tests/live/inference-cpu.yaml`. Required: the operator v0.13.0 creates no
-   PDB, so the Kyverno policy `require-pdb` would **deny** its Deployment at 2
-   replicas. Found while designing this plan, not live.
-3. Alerts in `observability/` with promtool tests: crash-looping pod
-   (`kube_pod_container_status_restarts_total`) and Deployment with fewer
-   available replicas than desired for 5 minutes
-   (`kube_deployment_status_replicas_available`), both added to the Alloy
-   allow-list. Today no alert covers either. The second also closes a gap
-   found while designing S3: `KarpenterControllerDown` is `up == 0` on
-   targets discovered from the Service endpoints, so a controller **scaled
-   to 0** leaves no target, no `up` series and no page (a crashing pod
-   stays a target and does page). `absent()` stays out, as the rules file
-   explains: after a destroy it would page forever.
+1. `tests/gameday/probe.yaml` and `scripts/gameday-sli.py`, tested on
+   `ci/fixtures/gameday/probe.log` by `ci/test-gameday-sli.py`.
+2. `tests/gameday/model.yaml`: the service at 2 replicas with a
+   PodDisruptionBudget `minAvailable: 1` placed before it. Required: the
+   operator v0.13.0 creates no PDB, so the Kyverno policy `require-pdb`
+   **denies** its Deployment at 2 replicas. CI admits the operator's
+   2-replica Deployment (`ci/fixtures/kyverno/vllm-2-replicas.yaml`) with the
+   PDB and rejects it without. Found while designing, not live. The file is
+   also the rollback target of S2. `tests/live/inference-cpu.yaml` stays at
+   1 replica and no PDB: there a `minAvailable: 1` PDB would block every
+   drain until terminationGracePeriod (1 h).
+3. Two alerts with promtool tests, their metrics added to kube-state-metrics
+   and to the Alloy allow-list: `PodCrashLooping` (ticket,
+   `docs/runbooks/workloads.md`) and `KarpenterControllerUnavailable` (page,
+   `docs/runbooks/karpenter.md`). The second closes a gap found while
+   designing S3: `KarpenterControllerDown` is `up == 0` on targets discovered
+   from the Service endpoints, so a controller **scaled to 0** leaves no
+   target, no `up` series and no page (a crashing pod stays a target and
+   does page). `absent()` stays out, as the rules file explains: after a
+   destroy it would page forever.
 4. The Grafana remote-write secret step of `live.md` is in scope this time:
-   detection is part of the test.
+   detection is part of the test. The rules reach Grafana through
+   `observability.yml` after the apply, as in live #3.
 
 ## 4. Scenarios
 
@@ -105,9 +110,9 @@ and the probe has been at 100 % for 5 minutes (steady state).
   `VLLM_CPU_KVCACHE_SPACE` (KV cache back to 4 GiB: the OOMKill of live #3).
 - **Hypothesis**: the operator rolls out make-before-break (maxSurge 1,
   maxUnavailable 0): the new pod crash-loops, the two old pods keep
-  serving, **no user impact**; the crash-loop alert of PR B fires within
+  serving, **no user impact**; `PodCrashLooping` fires within
   10 minutes; the operator diagnoses from `kubectl describe` and events and
-  rolls back by re-applying the manifest from Git.
+  rolls back by re-applying `tests/gameday/model.yaml` from Git.
 - **Pass**: availability 100 %; time to detect and time to recover written
   down; the rollback is the file in Git, not a hand edit.
 - **Abort**: any old pod terminated before a new one is Ready (that would
@@ -118,16 +123,16 @@ and the probe has been at 100 % for 5 minutes (steady state).
 - **Inject**: scale the Karpenter Deployment to 0 (Argo CD self-heal paused
   for that Application, as in live #3 step 4), then the Spot warning on
   one replica's node.
-- **Hypothesis**: the replicas-available alert of PR B pages by email
+- **Hypothesis**: `KarpenterControllerUnavailable` pages by email
   within 10 minutes of the scale-down (`KarpenterControllerDown` does not,
   see section 3); with no controller, the interrupted node is **not**
   replaced and the service runs on one replica (degraded, still within
   SLO); the operator follows `docs/runbooks/karpenter.md`, restores the
   controller through Argo CD, and the second replica is back within 5
   minutes of the restore.
-- **Control run** (recorded either way): the same scale-down on release
-  v2.3.3 rules alone would page nobody. If PR B is not merged, S3 is run
-  to prove that gap, and its postmortem's first action item is PR B.
+- **Control**: `KarpenterControllerDown` must stay silent (no target);
+  recorded as the proof of the gap that `KarpenterControllerUnavailable`
+  closes.
 - **Pass**: page received and acknowledged; time to detect, to mitigate
   and to recover written down; availability at least 99.5 %.
 - **Abort**: the remaining replica fails (total outage), or the session
@@ -160,3 +165,50 @@ and did not, runbook steps that were wrong or missing.
   only in the postmortem.
 - The CV line "Not yet: on-call" changes only if the evidence supports it:
   "no paged on-call yet; incident response practised on EKS".
+
+## 8. Run sheet
+
+After `docs/runbooks/live.md` steps 0 to 8 (apply, GitOps, Grafana secret
+and `observability.yml`), before its step 9 (destroy). One command at a time;
+the scribe writes the UTC time of each line into the timeline.
+
+Setup and steady state:
+
+    kubectl apply -f tests/gameday/model.yaml
+    kubectl -n inference-test get vllmservice qwen-0-5b-cpu -w        # until Ready
+    kubectl -n inference-test get pods -o wide                        # 2 pods, 2 different nodes
+    kubectl apply -f tests/gameday/probe.yaml
+    kubectl -n inference-test logs deploy/probe -f                    # 5 min of code 200 = steady state
+
+After each scenario, save the log and compute the SLIs (window from the
+injection to steady state again):
+
+    kubectl -n inference-test logs deploy/probe --tail=-1 > probe-S1.log
+    python3 scripts/gameday-sli.py probe-S1.log --from <UTC> --to <UTC>
+
+S1, Spot interruption:
+
+    bash tests/live/spot-interruption.sh       # first running Spot node of pool general: here, one model replica's node
+    kubectl -n inference-test get pods -o wide -w
+    kubectl -n inference-test get pdb qwen-0-5b-cpu -w                # allowed disruptions never below 0
+
+S2, bad change, then rollback from Git:
+
+    kubectl -n inference-test patch vllmservice qwen-0-5b-cpu --type json -p '[{"op":"remove","path":"/spec/env"}]'
+    kubectl -n inference-test get pods -w                             # new pod restarts, old pods stay Ready
+    # wait for PodCrashLooping in the email; diagnose with docs/runbooks/workloads.md
+    kubectl apply -f tests/gameday/model.yaml
+
+S3, autoscaler down, then a node lost (self-heal of `root` and `karpenter`
+off first, as in `live-3.md` step 4):
+
+    kubectl -n argocd patch application root --type merge -p '{"spec":{"syncPolicy":null}}'
+    kubectl -n argocd patch application karpenter --type merge -p '{"spec":{"syncPolicy":null}}'
+    kubectl -n kube-system scale deploy/karpenter --replicas=0
+    # wait for KarpenterControllerUnavailable in the email; then:
+    bash tests/live/spot-interruption.sh
+    # recover with docs/runbooks/karpenter.md, then restore Git's sync policies:
+    kubectl apply -f gitops/root-app.yaml
+
+Before teardown: `kubectl delete namespace inference-test`, then
+`live.md` step 9.

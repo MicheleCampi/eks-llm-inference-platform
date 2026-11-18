@@ -1,5 +1,6 @@
 # Cluster state for require-pdb (kyverno apply --context-file): the
-# PodDisruptionBudget of tests/live/inflate.yaml, as the API server returns it.
+# PodDisruptionBudgets of tests/live/inflate.yaml and tests/gameday/model.yaml,
+# as the API server returns them.
 apiVersion: cli.kyverno.io/v1alpha1
 kind: Context
 metadata:
@@ -14,3 +15,12 @@ spec:
       spec:
         maxUnavailable: 1
         selector: {matchLabels: {app: inflate}}
+    # Game day #1: the PDB of tests/gameday/model.yaml, for the model at 2 replicas.
+    - apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: qwen-0-5b-cpu
+        namespace: inference-test
+      spec:
+        minAvailable: 1
+        selector: {matchLabels: {app: qwen-0-5b-cpu}}

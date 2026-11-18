@@ -32,6 +32,30 @@ handled.
 
 Limit: if Alloy itself stops, `up` disappears and this alert does not fire.
 No `absent()` by choice, because it would page forever after a destroy.
+A controller scaled to 0 or never scheduled has no endpoint, so no target
+and no `up`: KarpenterControllerUnavailable covers that case.
+
+## KarpenterControllerUnavailable (severity page)
+
+`kube_deployment_status_replicas_available` for `kube-system/karpenter` below
+1 for 5 minutes: no replica runs at all (scaled to 0, Pending, or every pod
+crashing). Same effect as KarpenterControllerDown: no scale-out, no
+interruption handling. Added after designing game day #1 (scenario S3).
+
+1. `kubectl -n kube-system get deploy karpenter`: desired vs available. A
+   desired count of 0 means someone or something scaled it down: check
+   `kubectl -n argocd get application karpenter -o jsonpath='{.spec.syncPolicy}'`
+   (self-heal paused?) and the Argo CD history.
+2. `kubectl -n kube-system get pods -l app.kubernetes.io/name=karpenter -o wide`
+   and `kubectl -n kube-system describe pod <pod>`: Pending on the system
+   node group (capacity), or CrashLoopBackOff (then the steps of
+   KarpenterControllerDown).
+
+Act: restore from Git, not by hand: re-enable self-heal on the `karpenter`
+Application or `argocd app sync karpenter`; the replica count comes from the
+chart values in `gitops/apps/karpenter.yaml`. Confirm with
+`kubectl -n kube-system rollout status deploy/karpenter`, then that pending
+pods get NodeClaims (`kubectl get nodeclaims -w`).
 
 ## KarpenterSpotInterruption (severity ticket)
 

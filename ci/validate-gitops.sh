@@ -191,6 +191,18 @@ sed 's/replicas: 0/replicas: 5/' tests/live/inflate.yaml > "$W/inflate-5.yaml"
 cmp -s tests/live/inflate.yaml "$W/inflate-5.yaml" && { echo "FAIL live-workload-5-replicas: mutation changed nothing"; fail=1; }
 check live-workload-5-replicas "${KY[@]}" --resource "$W/inflate-5.yaml"
 grep -q 'fail: 0, warn: 0, error: 0' "$W/live-workload-5-replicas.log" || { echo "FAIL live-workload-5-replicas: not every policy passed"; fail=1; }
+# Game day #1 (docs/gameday/): probe and PDB valid and admitted; the model at
+# 2 replicas admitted only because the PDB of tests/gameday/model.yaml selects its pods
+# (the operator v0.13.0 creates no PDB). The SLI script against its fixture.
+check gameday-schema "${KC[@]}" tests/gameday/probe.yaml tests/gameday/model.yaml
+check gameday-probe-complies "${KY[@]}" --resource tests/gameday/probe.yaml
+check gameday-model-complies "${KY[@]}" --resource tests/gameday/model.yaml
+check gameday-model-2-replicas "${KY[@]}" --resource ci/fixtures/kyverno/vllm-2-replicas.yaml
+grep -q 'pass: 4, fail: 0, warn: 0, error: 0' "$W/gameday-model-2-replicas.log" || { echo "FAIL gameday-model-2-replicas: require-pdb not evaluated or not passed"; fail=1; }
+sed 's/app: qwen-0-5b-cpu, app.kubernetes/app: other, app.kubernetes/g' ci/fixtures/kyverno/vllm-2-replicas.yaml > "$W/neg-gameday-nopdb.yaml"
+cmp -s ci/fixtures/kyverno/vllm-2-replicas.yaml "$W/neg-gameday-nopdb.yaml" && { echo "FAIL neg-gameday-nopdb: mutation changed nothing"; fail=1; }
+expect_reject neg-gameday-nopdb "needs a PodDisruptionBudget" "${KY[@]}" --resource "$W/neg-gameday-nopdb.yaml"
+check gameday-sli python3 -I ci/test-gameday-sli.py
 echo "== self-test: each case must be rejected for the reason named"
 sed 's/targetRevision: v[0-9.]*/targetRevision: main/' gitops/apps/policies.yaml > "$W/neg-pin.yaml"
 expect_reject neg-release-pin-main "not a release tag" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml "$W/neg-pin.yaml"

@@ -16,14 +16,17 @@ spec:
     helm:
       releaseName: ksm
       values: |
-        # Only what the requests-vs-usage dashboard and the NodeNotReady alert need (Grafana Cloud free tier bound).
-        collectors: [pods, nodes, namespaces]
+        # Only what the requests-vs-usage dashboard and the alerts need (Grafana Cloud free tier bound).
+        collectors: [pods, nodes, namespaces, deployments]
         metricAllowlist:
           - kube_pod_container_resource_requests
           - kube_namespace_labels
           - kube_node_labels
           # Alert NodeNotReady (observability/karpenter-rules.yaml).
           - kube_node_status_condition
+          # Alerts PodCrashLooping and KarpenterControllerUnavailable (game day #1, docs/gameday/).
+          - kube_pod_container_status_restarts_total
+          - kube_deployment_status_replicas_available
         # Showback: team and cost centre come from the namespace (the quota boundary), not from each pod.
         metricLabelsAllowlist:
           - namespaces=[platform.michelecampi.dev/team,platform.michelecampi.dev/cost-center]

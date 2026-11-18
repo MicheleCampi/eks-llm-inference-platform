@@ -1,0 +1,60 @@
+# Game day #1 (docs/gameday/README.md, section 3): the SLI measured from the
+# user's side. One 32-token completion every 2 s through the Service the
+# operator creates; one JSON line per request on stdout:
+#   {"t":"<UTC>","code":<HTTP code, 0 if no answer>,"s":<seconds>}
+# The client label is the one the operator's NetworkPolicy admits.
+# A request with no answer is curl's code 000, written as 0 (valid JSON).
+# $$( is the Kubernetes escape for a literal $( in args.
+# Applied by hand after the model is Ready, deleted before destroy, like
+# tests/live/inflate.yaml. Logs: kubectl -n inference-test logs deploy/probe --tail=-1
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe
+  namespace: inference-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: probe}
+  template:
+    metadata:
+      labels:
+        app: probe
+        inference.michelecampi.dev/client: qwen-0-5b-cpu
+    spec:
+      # On the system node group (On-Demand, outside Karpenter): the probe must not
+      # share the fate of the Spot nodes it is measuring.
+      nodeSelector: {platform.michelecampi.dev/pool: system}
+      containers:
+        - name: curl
+          image: docker.io/curlimages/curl:8.17.0@sha256:935d9100e9ba842cdb060de42472c7ca90cfe9a7c96e4dacb55e79e560b3ff40
+          command: ["sh", "-c"]
+          args:
+            - >-
+              while true; do
+              t=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
+              r=$$(curl -s -o /dev/null -m 30 -w '%{http_code} %{time_total}'
+              http://qwen-0-5b-cpu:8000/v1/completions
+              -H 'Content-Type: application/json'
+              -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Kubernetes is","max_tokens":32}');
+              set -- $r;
+              c=$$((${1:-0} + 0));
+              echo "{\"t\":\"$t\",\"code\":$c,\"s\":${2:-30}}";
+              sleep 2;
+              done
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        runAsGroup: 65535
+        seccompProfile:
+          type: RuntimeDefault
