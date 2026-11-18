@@ -1,0 +1,40 @@
+name: image-scan
+
+# Vulnerability scan of every image the platform runs (ci/image-scan.sh):
+# on pull requests that can change an image, weekly for new CVEs in images
+# that did not change, and by hand. No cloud credentials.
+on:
+  pull_request:
+    paths:
+      - gitops/**
+      - tests/**
+      - ci/versions.env
+      - ci/image-scan.sh
+      - ci/trivyignore-images.yaml
+      - .github/workflows/image-scan.yml
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: image-scan-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  scan:
+    name: image scan (trivy, fixable CRITICAL fails)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (inference-platform-ci, pinned in ci/platform-ci.env)
+        run: bash ci/install-tools.sh
+      - name: List the images the platform runs
+        run: IMAGES_OUT="$RUNNER_TEMP/images.txt" bash ci/validate-gitops.sh > "$RUNNER_TEMP/gitops.log" 2>&1 || { tail -40 "$RUNNER_TEMP/gitops.log"; exit 1; }
+      - name: Scan
+        run: bash ci/image-scan.sh "$RUNNER_TEMP/images.txt"

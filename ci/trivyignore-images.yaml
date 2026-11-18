@@ -1,0 +1,6 @@
+# Accepted image vulnerabilities for ci/image-scan.sh. Each entry needs a
+# statement (why it does not apply, or who fixes it and when) and an
+# expired_at no more than 90 days out: after that date the CVE fails the
+# scan again and the reason must be checked anew.
+# Format: https://trivy.dev/latest/docs/configuration/filtering/#trivyignoreyaml
+vulnerabilities: []

@@ -156,6 +156,13 @@ TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache"
 check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.4.3.yaml' | sha256sum -c -"
 check argocd-overlay-build sh -c "kustomize build gitops/argocd > '$W/charts/argocd.yaml'"
 check trivy-charts "${TRIVY_CH[@]}" "$W/charts"
+# Every image the platform runs, from the charts as deployed and the live
+# test workloads (VllmService spec.image included): the input of
+# ci/image-scan.sh. IMAGES_OUT keeps the list for that job.
+yq -N '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' "$W"/charts/*.yaml tests/live/*.yaml tests/gameday/*.yaml | sort -u > "$W/images.txt"
+check images-listed test "$(wc -l < "$W/images.txt")" -ge 8
+sed 's/^/  /' "$W/images.txt"
+[ -n "${IMAGES_OUT:-}" ] && cp "$W/images.txt" "$IMAGES_OUT"
 # Live #4: Argo CD adds PreDelete finalizers to a child Application with
 # pre-delete hooks (kyverno), so root must ignore exactly those.
 check root-finalizers "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-finalizers.py gitops/root-app.yaml "$W"/charts/*.yaml
