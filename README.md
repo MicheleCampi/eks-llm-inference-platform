@@ -52,13 +52,16 @@ GKE pins its own release in
   refused a node. The operator `v0.12.0`, deployed by Argo CD, created the
   CPU model pod on a Karpenter `m7i-flex.large` Spot node, but the pod was
   OOMKilled: vLLM CPU reserves a fixed 4 GiB KV cache (Findings #5).
-- Not yet run on EKS: a model answering. The CPU workload was run free in
-  Docker on 2026-11-17 with the command and 6 GiB limit the operator gives
-  the pod: Qwen2.5-0.5B on the vLLM CPU v0.11.2 image answered HTTP 200
-  using 4.88 GiB. That check found that `v0.11.0` ran every `gpu: 0` service
-  as an inert placeholder, fixed in `v0.12.0`. CI renders the `v0.12.0` chart with the values Argo CD deploys and checks it
-  against the Kyverno policies and the AppProject. GPU serving by the same
-  operator was measured on GKE and on a 3x A10 fleet, see the operator repo.
+- 2026-11-18, live #4 ([evidence](docs/evidence/live-2026-11-18.md)): a
+  model served on EKS. The operator `v0.13.0`, deployed by Argo CD, set
+  `VLLM_CPU_KVCACHE_SPACE=1` through `spec.env`; Karpenter launched a Spot
+  `m7i-flex.large` and the VllmService was Ready 118 s after the apply.
+  Qwen2.5-0.5B on vLLM CPU v0.11.2 answered 20 requests out of 20 with HTTP
+  200 (p50 3.83 s, max 19.17 s on the first, cold request), 0 restarts,
+  4130Mi used of the 6Gi limit. The same settings had been run free in Docker
+  first (peak 5.0 GiB, 20 out of 20). CPU latency, not a GPU benchmark: GPU
+  serving by the same operator was measured on GKE and on a 3x A10 fleet,
+  see the operator repo.
 
 ## Architecture
 
@@ -261,7 +264,8 @@ tag; everything else reconciles from Git.
    (4 GiB by default, no CLI flag). On EKS the 6Gi pod was OOMKilled right
    after the allocation, though the same limit held in Docker; a larger
    limit did not fit because the NodePool CPU limit was reached (live #3).
-   The operator needs to pass `env` to the container.
+   Fixed: the operator `v0.13.0` passes `spec.env` to the container and the
+   workload sets 1 GiB; served on EKS in live #4.
 6. **Argo CD's default diff ignores keys that Git does not declare.** A tag
    added by hand to `EC2NodeClass default` stayed, and `karpenter-nodes`
    stayed Synced with selfHeal on (live #3). Server-side diff would not
@@ -272,6 +276,15 @@ tag; everything else reconciles from Git.
 7. **The Grafana remote-write secret is created empty** and its value was
    not in the runbook: ESO and Alloy failed until it was put (live #3). Now
    step 4 of `docs/runbooks/live.md`, with a dedicated, short-lived token.
+8. **Argo CD adds finalizers to a child Application with PreDelete hooks.**
+   `root` stayed OutOfSync with every child Synced/Healthy (live #3 and #4).
+   The diff was on `Application kyverno`: Argo CD had added
+   `pre-delete-finalizer.argocd.argoproj.io` and `.../cleanup`, because the
+   Kyverno chart has a pre-delete hook, and Git declares only
+   `resources-finalizer`; the spec was identical. `root` now ignores exactly
+   those two finalizers (jq path, with `RespectIgnoreDifferences`), so a
+   missing `resources-finalizer` would still show; CI checks it
+   (`ci/check-root-finalizers.py`, with a negative case).
 
 ## Bootstrap (one-time, out-of-band)
 
@@ -292,7 +305,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.2                      # the release the cluster runs
+    git checkout v2.3.3                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
@@ -332,6 +345,10 @@ Karpenter's real queue (`tests/live/spot-interruption.sh`; AWS FIS in
 budgets, the PDB honoured during a drain, IMDS blocked from a pod, the
 NodePool cost caps, and a clean teardown. Not served: the CPU model
 (Findings #5).
+Checked live on 2026-11-18 ([evidence](docs/evidence/live-2026-11-18.md),
+runbook `docs/runbooks/live-3.md` step 2 alone): the CPU model served through
+the operator on a Karpenter Spot node, 20 answers out of 20, and a clean
+teardown.
 
 ## Production gaps
 

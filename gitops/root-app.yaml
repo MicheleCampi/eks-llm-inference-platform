@@ -7,7 +7,7 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: v2.3.2
+    targetRevision: v2.3.3
     path: gitops/apps
   destination:
     server: https://kubernetes.default.svc
@@ -16,3 +16,15 @@ spec:
     automated:
       prune: true
       selfHeal: true
+    # RespectIgnoreDifferences: selfHeal must not strip the finalizers below.
+    syncOptions: [RespectIgnoreDifferences=true]
+  # Argo CD adds pre-delete-finalizer.argocd.argoproj.io(/cleanup) to a child
+  # Application whose chart has PreDelete hooks (kyverno). Git does not declare
+  # them, so without this root stays OutOfSync forever (live #4, 18/11). Only
+  # those are ignored: resources-finalizer from Git is still compared.
+  # CI: ci/check-root-finalizers.py.
+  ignoreDifferences:
+    - group: argoproj.io
+      kind: Application
+      jqPathExpressions:
+        - '.metadata.finalizers[]? | select(startswith("pre-delete-finalizer.argocd.argoproj.io"))'

@@ -54,8 +54,10 @@ OOMKilled (exit 137) right after allocating the KV cache: vLLM CPU reserves
 `VLLM_CPU_KVCACHE_SPACE` (4 GiB by default) whatever the limit. A 6900Mi
 limit stayed Pending, because the NodePool CPU limit was reached. Since
 v2.3.2 the operator is `v0.13.0` and `tests/live/inference-cpu.yaml` sets
-`VLLM_CPU_KVCACHE_SPACE=1` through `spec.env`: run this step again in the
-next live.
+`VLLM_CPU_KVCACHE_SPACE=1` through `spec.env`. Live #4 (2026-11-18, v2.3.2)
+ran this step alone: Ready in 118 s on a Spot `m7i-flex.large`, 20 answers
+200, p50 3.83 s, 0 restarts, 4130Mi used
+([evidence](../evidence/live-2026-11-18.md)).
 
 ## 3. Spot interruption and the PDB (warning injected on the real queue)
 
