@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Vulnerability scan of every image the platform runs (list made by
 # ci/validate-gitops.sh with IMAGES_OUT). Policy:
-#   - CRITICAL with a fixed version available fails the job. Fix: bump the
+#   - CRITICAL with a fixed version available fails the job, unless the image
+#     is in ci/image-scan-baseline.txt and before its expiry. Fix: bump the
 #     pin (our images) or the chart (upstream images), or accept it in
 #     ci/trivyignore-images.yaml with a reason and an expiry.
 #   - HIGH with a fix is reported in the job summary, not blocking: tracked,
@@ -34,7 +35,11 @@ import json, sys
 d = json.load(open(sys.argv[1]))
 v = [x for r in d.get("Results") or [] for x in r.get("Vulnerabilities") or []]
 print(sum(x["Severity"] == "CRITICAL" for x in v), sum(x["Severity"] == "HIGH" for x in v))' "$out")
-  if [ "$crit" -gt 0 ]; then
+  # A baselined image (ci/image-scan-baseline.txt) passes until its expiry.
+  exp=$(awk -v i="$img" '$1 == i {print $2}' ci/image-scan-baseline.txt)
+  if [ "$crit" -gt 0 ] && [ -n "$exp" ] && [[ "$(date -u +%F)" < "$exp" || "$(date -u +%F)" == "$exp" ]]; then
+    res="BASELINE until $exp"
+  elif [ "$crit" -gt 0 ]; then
     res="FAIL"; fail=1
     "$TRIVY" image -q --cache-dir "$CACHE/db" --skip-db-update --scanners vuln --ignore-unfixed \
       --severity CRITICAL --ignorefile ci/trivyignore-images.yaml "$img"
