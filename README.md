@@ -369,3 +369,13 @@ Known and accepted for this project; each would be closed before production.
   a central alerting repository.
 - Rule changes are approved by the hash of the rules file, not by a diff
   against Grafana: the documented `/api/convert/` commands are load and sync.
+- Incident response not yet practised: the live sessions proved the
+  platform, not a person detecting and recovering from a failure users
+  feel. Game day #1 is designed ([docs/gameday/](docs/gameday/README.md):
+  SLO, three scenarios with hypotheses, roles, postmortem template) and runs
+  after its prerequisite PR and BUDGET entry. Designing it found two gaps:
+  the operator creates no PodDisruptionBudget, so `require-pdb` denies a
+  2-replica model; and `KarpenterControllerDown` cannot fire when the
+  controller is scaled to 0 (no endpoint, no `up` series).
+- When to run this instead of ECS Fargate, and how to move:
+  [ADR 0001](docs/adr/0001-ecs-or-eks.md).
