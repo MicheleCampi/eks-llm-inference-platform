@@ -129,10 +129,10 @@ tag; everything else reconciles from Git.
   EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
   checks chart pins and SHA-256, manifests against the deployed CRDs, the
   service account, secret name and metrics port wiring, and the Alloy config
-  with Alloy itself, with negative cases. Seven alerts live in
+  with Alloy itself, with negative cases. Nine alerts (seven on Karpenter and nodes, two on workloads since v2.3.4) live in
   `observability/karpenter-rules.yaml`, Prometheus format for promtool and
   Grafana-managed rules alike, with promtool tests, a runbook
-  (`docs/runbooks/karpenter.md`) and a dashboard
+  per group (`docs/runbooks/karpenter.md`, `docs/runbooks/workloads.md`) and a dashboard
   (`observability/karpenter-dashboard.json`); metric and label names are read
   from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
   drops a metric they use. Pages: NodePool CPU limit reached, controller
