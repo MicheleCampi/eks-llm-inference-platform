@@ -156,6 +156,12 @@ TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache"
 check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.4.3.yaml' | sha256sum -c -"
 check argocd-overlay-build sh -c "kustomize build gitops/argocd > '$W/charts/argocd.yaml'"
 check trivy-charts "${TRIVY_CH[@]}" "$W/charts"
+# Live #4: Argo CD adds PreDelete finalizers to a child Application with
+# pre-delete hooks (kyverno), so root must ignore exactly those.
+check root-finalizers "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-finalizers.py gitops/root-app.yaml "$W"/charts/*.yaml
+sed -n '1p' "$W/root-finalizers.log" | sed 's/^/  /'
+yq 'del(.spec.ignoreDifferences)' gitops/root-app.yaml > "$W/neg-root.yaml"
+expect_reject neg-root-finalizers "root does not ignore pre-delete-finalizer" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-finalizers.py "$W/neg-root.yaml" "$W"/charts/*.yaml
 { cat gitops/argocd/upstream/install-v3.4.3.yaml; echo "# tampered"; } > "$W/argocd-tampered.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests > "$W/neg-chart/kyverno.yaml"
 echo "== AppProject platform: every cluster-scoped kind its apps create is whitelisted"
