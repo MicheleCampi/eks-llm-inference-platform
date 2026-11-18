@@ -4,7 +4,5 @@
 # Before the expiry the image is reported as BASELINE (not a failure); after
 # it the image fails again. New images and new CRITICALs on other images are
 # never covered. Expiry at most 30 days out.
-quay.io/argoproj/argocd:v3.4.3 2026-12-18 Argo CD 3.4.3 is 11 patches behind (3.4.14 exists): fix = upgrade the vendored install manifest to the latest 3.4 patch, then rescan
-ghcr.io/dexidp/dex:v2.45.0 2026-12-18 shipped by the Argo CD 3.4.3 install manifest, SSO not used: fix = the Argo CD upgrade above, or drop Dex from the overlay
-public.ecr.aws/docker/library/redis:8.2.3-alpine 2026-12-18 shipped by the Argo CD 3.4.3 install manifest: fix = the Argo CD upgrade above
+public.ecr.aws/docker/library/redis:8.2.3-alpine 2026-12-18 shipped by the Argo CD install manifest, unchanged in 3.4.14 (the latest 3.4 patch): fix = an upstream 3.4 patch with a newer Redis, or an images override in gitops/argocd to a Redis 8.2 patch that scans clean
 public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a 2026-12-18 test workload only (tests/live, tests/gameday), applied by hand in live sessions and deleted before destroy, never on the platform: fix = a newer vLLM CPU release after its free Docker pre-check

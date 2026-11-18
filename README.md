@@ -307,7 +307,7 @@ create the role it assumes), then its ARN is set as a repo variable:
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
     git checkout v2.3.4                      # the release the cluster runs
     kubectl create ns argocd
-    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
+    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.14 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter

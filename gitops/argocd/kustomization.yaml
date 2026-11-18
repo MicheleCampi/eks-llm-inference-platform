@@ -1,18 +1,55 @@
-# Argo CD install: upstream v3.4.3 manifest vendored in upstream/ (SHA-256
-# pinned in ci/versions.env, checked in CI) plus a pod securityContext on the
-# 5 workloads that had none (trivy KSV-0118). Their containers already run
-# non-root with seccomp RuntimeDefault; this states it at pod level too.
+# Argo CD install: upstream v3.4.14 manifest vendored in upstream/ (SHA-256
+# pinned in ci/versions.env, checked in CI) plus two changes:
+#  - a pod securityContext on the 4 workloads that had none (trivy KSV-0118).
+#    Their containers already run non-root with seccomp RuntimeDefault; this
+#    states it at pod level too.
+#  - Dex removed. It only serves SSO, which this platform does not use (admin
+#    login, then accounts by GitOps); an unused component is attack surface and
+#    its image carried fixable CRITICAL CVEs (ci/image-scan-baseline.txt). The
+#    argocd-server Dex settings are optional (configMapKeyRef optional, TLS
+#    secret volume optional), so the server runs without it. To add SSO later:
+#    delete these patches and set dex.config in argocd-cm.
 # Apply: kubectl apply -k gitops/argocd --server-side
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: argocd
 resources:
-  - upstream/install-v3.4.3.yaml
+  - upstream/install-v3.4.14.yaml
 patches:
   - target:
       kind: (Deployment|StatefulSet)
-      name: argocd-(applicationset-controller|dex-server|repo-server|server|application-controller)
+      name: argocd-(applicationset-controller|repo-server|server|application-controller)
     patch: |-
       - op: add
         path: /spec/template/spec/securityContext
         value: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+  - patch: |-
+      $patch: delete
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: argocd-dex-server}
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: Service
+      metadata: {name: argocd-dex-server}
+  - patch: |-
+      $patch: delete
+      apiVersion: v1
+      kind: ServiceAccount
+      metadata: {name: argocd-dex-server}
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: Role
+      metadata: {name: argocd-dex-server}
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: RoleBinding
+      metadata: {name: argocd-dex-server}
+  - patch: |-
+      $patch: delete
+      apiVersion: networking.k8s.io/v1
+      kind: NetworkPolicy
+      metadata: {name: argocd-dex-server-network-policy}
