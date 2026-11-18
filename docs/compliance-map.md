@@ -34,7 +34,7 @@ Status: **done** (in the code and checked by CI or proven live),
 | CC8.1, A.8.32 (approval before production change) | `terraform apply` and `destroy` only by manual dispatch behind an environment approval; the approved plan is bound by the SHA-256 of its resource changes | `.github/workflows/apply.yml`, `destroy.yml` | the apply job refuses a plan whose hash differs | done |
 | CC8.1, A.8.9 (configuration drift) | Argo CD self-heal; Kyverno lets only Argo CD and Karpenter change NodePools and EC2NodeClasses (out-of-band edits were not reverted, live #3) | `gitops/policies/karpenter-config-from-git.yaml` | CI Kyverno negative cases | done |
 | CC7.1, A.8.8 (vulnerabilities in configuration) | trivy config on Terraform, manifests and rendered charts, HIGH and CRITICAL fail the build | `ci/validate-gitops.sh` (`trivy-config`, `trivy-charts`) | CI | done |
-| CC7.1, A.8.8 (vulnerabilities in images) | Images pinned by digest; Kyverno rejects `:latest` and untagged images | `gitops/policies/disallow-latest-tag.yaml` | CI Kyverno | partial: no image CVE scan in this repo (the operator image has SLSA Build L2 provenance in its own repo); standard fix is trivy image or registry scanning with a CVE SLA |
+| CC7.1, A.8.8 (vulnerabilities in images) | Images pinned by digest; Kyverno rejects `:latest` and untagged images; every image the platform runs (charts as deployed, test workloads) scanned by trivy on each PR that can change one and weekly; a fixable CRITICAL fails, HIGH is reported; exceptions only with a reason and an expiry | `gitops/policies/disallow-latest-tag.yaml`, `ci/image-scan.sh`, `.github/workflows/image-scan.yml`, `ci/trivyignore-images.yaml` | workflow `image-scan` | partial: the first scan (2026-11-18) found fixable CRITICALs in Argo CD 3.4.3 and the Dex and Redis it ships (3.4.14 exists) and in the vLLM CPU test image; baselined until 2026-12-18 in `ci/image-scan-baseline.txt`, each with its fix. EKS add-on images are patched by AWS, out of scope |
 | CC8.1, A.8.25, A.8.28 (secure supply chain of the pipeline) | Every CI tool pinned by SHA-256; GitHub Actions pinned by commit; Dependabot weekly | `ci/platform-ci.env`, `.github/workflows/*.yml`, `.github/dependabot.yml` | `actionlint`, install script checks hashes | done |
 | A.8.31 (separation of environments) | Plan environments separate from apply environments; a single live environment | `.github/workflows/*.yml` | none | partial: one cluster, no staging; standard fix is a staging cluster or ephemeral per-PR environment |
 
@@ -69,7 +69,6 @@ Status: **done** (in the code and checked by CI or proven live),
 | Gap | Standard fix | Cost |
 |---|---|---|
 | Audit logging (CC7.2, A.8.15) | EKS control-plane logs (audit at least) with 7-day retention for live sessions | a few cents per session; worth it in live #5 |
-| Image CVE scan (CC7.1, A.8.8) | trivy image in CI on every pinned image, fail on CRITICAL with a fix available | 0 |
 | Customer-managed KMS key (A.8.24) | `encryption_config` with a CMK, rotation on | ~1 USD a month per key while it exists |
 | Second reviewer and access review (A.5.18) | two required reviewers on `live` | needs a second person |
 | Staging (A.8.31) | ephemeral cluster per release | doubles live cost; not worth it at this scale |

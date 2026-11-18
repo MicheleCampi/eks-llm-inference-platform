@@ -129,10 +129,10 @@ tag; everything else reconciles from Git.
   EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
   checks chart pins and SHA-256, manifests against the deployed CRDs, the
   service account, secret name and metrics port wiring, and the Alloy config
-  with Alloy itself, with negative cases. Seven alerts live in
+  with Alloy itself, with negative cases. Nine alerts (seven on Karpenter and nodes, two on workloads since v2.3.4) live in
   `observability/karpenter-rules.yaml`, Prometheus format for promtool and
   Grafana-managed rules alike, with promtool tests, a runbook
-  (`docs/runbooks/karpenter.md`) and a dashboard
+  per group (`docs/runbooks/karpenter.md`, `docs/runbooks/workloads.md`) and a dashboard
   (`observability/karpenter-dashboard.json`); metric and label names are read
   from the Karpenter v1.15.1 code, and `ci/metrics-shipped.py` fails if Alloy
   drops a metric they use. Pages: NodePool CPU limit reached, controller
@@ -384,5 +384,4 @@ Known and accepted for this project; each would be closed before production.
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
-  (audit logging off, no image CVE scan, no customer-managed KMS key, one
-  reviewer) and their standard fixes. A map, not a certification.
+  (audit logging off, no customer-managed KMS key, one reviewer) and their standard fixes. A map, not a certification.
