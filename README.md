@@ -382,3 +382,7 @@ Known and accepted for this project; each would be closed before production.
   (no endpoint, no `up` series).
 - When to run this instead of ECS Fargate, and how to move:
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).
+- Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
+  and ISO 27001 controls to evidence in this repository, with the gaps
+  (audit logging off, no image CVE scan, no customer-managed KMS key, one
+  reviewer) and their standard fixes. A map, not a certification.
