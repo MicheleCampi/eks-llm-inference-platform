@@ -8,7 +8,7 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.1; live #3: A-017, cap 4,00 EUR, forced destroy at 4 hours).
+  (v2.3.2; the next live needs its own BUDGET entry and cap).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
   read-only): the apply role can do what apply and destroy need, and no more.
@@ -26,13 +26,13 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.3.1
+    git checkout v2.3.2
 
-Read this runbook from main: commits after v2.3.1 change documentation only.
+Read this runbook from main: commits after v2.3.2 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.3.1
+    gh workflow run apply.yml --ref v2.3.2
     gh run watch
 
 Open the run: the plan job summary shows the plan and its sha256. Expected:
@@ -50,6 +50,15 @@ application is Synced and Healthy.
 
     kubectl -n argocd get applications
 
+Live #3 left `root` OutOfSync with every child Synced/Healthy, from
+bootstrap to teardown. If it happens again, record which resource and which
+field before anything else (the cause is in the diff, not in the children):
+
+    kubectl -n argocd get application root -o json | jq -r '.status.resources[] | select(.status != "Synced") | "\(.kind)/\(.name) \(.status)"'
+
+Then compare that resource's live YAML (`kubectl get <kind> <name> -o yaml`)
+with its file under `gitops/apps/` and record the differing field.
+
 ## 4. Grafana as code and the secret
 
 Terraform creates `llm-inference/grafana-cloud-remote-write` empty, so its
@@ -66,7 +75,7 @@ The token is typed, never pasted in a file or a chat:
 `PROM_URL` is the remote-write URL and `PROM_USER` the instance id of the
 Prometheus data source (Grafana Cloud, stack details).
 
-    gh workflow run observability.yml --ref v2.3.1
+    gh workflow run observability.yml --ref v2.3.2
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -139,7 +148,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete ec2nodeclass default gpu   # Karpenter deletes the instance profile it created
     kubectl wait --for=delete ec2nodeclass/default ec2nodeclass/gpu --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.3.1
+    gh workflow run destroy.yml --ref v2.3.2
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session; the session's access policy (step 4) is deleted.

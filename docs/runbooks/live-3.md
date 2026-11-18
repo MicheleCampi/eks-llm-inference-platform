@@ -52,9 +52,10 @@ Expected: 20 answers 200; record p50 and max. CPU latency, not a GPU benchmark.
 Live #3: the NodeClaim was `m7i-flex.large` as expected, but the pod was
 OOMKilled (exit 137) right after allocating the KV cache: vLLM CPU reserves
 `VLLM_CPU_KVCACHE_SPACE` (4 GiB by default) whatever the limit. A 6900Mi
-limit stayed Pending, because the NodePool CPU limit was reached. Run this
-step again once the operator passes `env` and the example sets
-`VLLM_CPU_KVCACHE_SPACE=1`.
+limit stayed Pending, because the NodePool CPU limit was reached. Since
+v2.3.2 the operator is `v0.13.0` and `tests/live/inference-cpu.yaml` sets
+`VLLM_CPU_KVCACHE_SPACE=1` through `spec.env`: run this step again in the
+next live.
 
 ## 3. Spot interruption and the PDB (warning injected on the real queue)
 
