@@ -1,0 +1,47 @@
+# Game day #1 (docs/gameday/README.md): the service under test, as Git
+# declares it. Same model, image and settings as tests/live/inference-cpu.yaml,
+# at 2 replicas, with the PodDisruptionBudget that 2 replicas need: Kyverno
+# require-pdb denies the operator's Deployment without one, and the operator
+# v0.13.0 creates none (found while designing the game day). The PDB comes
+# first in the file, so it exists before the operator builds the Deployment.
+# This file is also the rollback target of scenario S2: `kubectl apply -f`
+# it restores the declared state. Applied by hand, deleted before destroy.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference-test
+  labels: {kubernetes.io/metadata.name: inference-test}
+---
+# minAvailable 1: a drain (Spot interruption, drift, consolidation) may take
+# one replica, never both. Not used at 1 replica (tests/live/), where it
+# would block every drain until terminationGracePeriod (1 h).
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: qwen-0-5b-cpu
+  namespace: inference-test
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: qwen-0-5b-cpu}
+---
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen-0-5b-cpu
+  namespace: inference-test
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 2
+  warmupStrategy: Eager
+  image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs: ["--max-model-len", "2048", "--dtype", "bfloat16"]
+  # 1 GiB of KV cache (live #3 OOM at the 4 GiB default). Removing it is
+  # scenario S2.
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"

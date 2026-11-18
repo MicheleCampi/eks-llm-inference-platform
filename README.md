@@ -305,7 +305,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.3                      # the release the cluster runs
+    git checkout v2.3.4                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
@@ -372,10 +372,13 @@ Known and accepted for this project; each would be closed before production.
 - Incident response not yet practised: the live sessions proved the
   platform, not a person detecting and recovering from a failure users
   feel. Game day #1 is designed ([docs/gameday/](docs/gameday/README.md):
-  SLO, three scenarios with hypotheses, roles, postmortem template) and runs
-  after its prerequisite PR and BUDGET entry. Designing it found two gaps:
-  the operator creates no PodDisruptionBudget, so `require-pdb` denies a
-  2-replica model; and `KarpenterControllerDown` cannot fire when the
-  controller is scaled to 0 (no endpoint, no `up` series).
+  SLO, three scenarios with hypotheses, roles, postmortem template, run
+  sheet) and prepared since v2.3.4 (client-side probe and SLI script, the
+  model at 2 replicas with its PDB, alerts `PodCrashLooping` and
+  `KarpenterControllerUnavailable`); it runs after its BUDGET entry.
+  Designing it found two gaps, both closed in v2.3.4: the operator creates
+  no PodDisruptionBudget, so `require-pdb` denied a 2-replica model; and
+  `KarpenterControllerDown` cannot fire when the controller is scaled to 0
+  (no endpoint, no `up` series).
 - When to run this instead of ECS Fargate, and how to move:
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).

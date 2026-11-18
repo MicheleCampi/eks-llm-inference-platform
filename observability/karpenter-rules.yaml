@@ -71,3 +71,27 @@ groups:
           severity: page
         annotations:
           runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+      - alert: KarpenterControllerUnavailable
+        # No Karpenter replica available for 5 minutes, from kube-state-metrics.
+        # Covers what KarpenterControllerDown cannot: scaled to 0 or never
+        # scheduled leaves no endpoint, so no target and no up series (found
+        # designing game day #1, docs/gameday/README.md). After a destroy the
+        # series is gone, so it never pages forever.
+        expr: max(kube_deployment_status_replicas_available{namespace="kube-system",deployment="karpenter"}) < 1
+        for: 5m
+        labels:
+          severity: page
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md
+  - name: workloads
+    rules:
+      - alert: PodCrashLooping
+        # A container restarted 3 or more times in 10 minutes: a bad change
+        # (image, config, memory) that the make-before-break rollout keeps
+        # away from users, but which never becomes Ready. A ticket: the old
+        # replicas still serve. kube-system is left to EKS and its add-ons.
+        expr: sum by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace!="kube-system"}[10m])) >= 3
+        labels:
+          severity: ticket
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/workloads.md

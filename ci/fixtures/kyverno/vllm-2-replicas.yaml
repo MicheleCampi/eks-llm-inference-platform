@@ -1,0 +1,25 @@
+# Game day #1: the Deployment the operator v0.13.0 builds for
+# tests/gameday/model.yaml, 2 replicas (labels, selector, image and
+# requests as in its src/main.rs). With its PDB in the
+# context it must pass require-pdb; ci/validate-gitops.sh also checks it is
+# rejected when its pods are not selected by any PDB.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qwen-0-5b-cpu
+  namespace: inference-test
+  labels: {app: qwen-0-5b-cpu, app.kubernetes.io/managed-by: vllm-coldstart-operator}
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app: qwen-0-5b-cpu, app.kubernetes.io/managed-by: vllm-coldstart-operator}
+  template:
+    metadata:
+      labels: {app: qwen-0-5b-cpu, app.kubernetes.io/managed-by: vllm-coldstart-operator}
+    spec:
+      containers:
+        - name: vllm
+          image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
+          resources:
+            requests: {cpu: "1", memory: 6Gi}
+            limits: {cpu: "1", memory: 6Gi}
