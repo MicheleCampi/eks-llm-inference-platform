@@ -1,0 +1,19 @@
+# Path A: the operator of this platform. What a team writes to get a model.
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen
+  namespace: cmp-operator
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 1
+  warmupStrategy: Eager
+  image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs: ["--max-model-len", "2048", "--dtype", "bfloat16"]
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
