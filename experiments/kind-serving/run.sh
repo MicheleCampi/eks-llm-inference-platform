@@ -23,6 +23,13 @@ LOG="results/$phase.log"
 ts() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 say() { echo "$(ts) $*" | tee -a "$LOG"; }
 need() { command -v "$1" >/dev/null || { echo "missing: $1"; exit 1; }; }
+# Every chart here is public: helm pulls them anonymously. Without this, helm
+# falls back to ~/.docker/config.json and sends whatever ghcr.io login is
+# there; a stale one gets 403 on public KServe charts (optim-dev, 2026-11-19).
+# Scoped to helm, so docker and kind keep the user's own configuration.
+HELM_ANON=$(mktemp -d); trap 'rm -rf "${HELM_ANON:?}"' EXIT
+echo '{}' > "$HELM_ANON/config.json"
+helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json" command helm "$@"; }
 
 # 20 completions through a port-forward; prints p50 and max like the live runbook.
 probe() { # namespace service
