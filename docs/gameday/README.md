@@ -100,6 +100,12 @@ and the probe has been at 100 % for 5 minutes (steady state).
   flight on the drained pod fail (2 or fewer); the replacement replica is
   Ready within 4 minutes (node ~55 s, image ~60 s, model ~120 s); the PDB
   never allows 0; `KarpenterSpotInterruption` opens a ticket.
+- **Prediction from the code** (`markUnavailableOfferings`, v1.15.1): a
+  Spot interruption marks that instance type, zone and capacity type
+  unavailable for 3 minutes (`UnavailableOfferingsTTL`). Only
+  `m7i-flex.large` of pool `general` fits a 6 GiB model pod, so the
+  replacement is `m7i-flex.large` Spot in **another zone**, or On-Demand.
+  Recorded: zone and capacity type of the old and the new node.
 - **Pass**: availability over the window at least 99.5 %; latency SLI met
   (one replica holds the probe's rate).
 - **Abort**: both replicas not Ready for more than 2 minutes.
@@ -121,15 +127,35 @@ and the probe has been at 100 % for 5 minutes (steady state).
 ### S3. The paging path: autoscaler down, then a node lost
 
 - **Inject**: scale the Karpenter Deployment to 0 (Argo CD self-heal paused
-  for that Application, as in live #3 step 4), then the Spot warning on
-  one replica's node.
+  for that Application, as in live #3 step 4); after the page, **terminate
+  the EC2 instance** of one replica's node (`aws ec2 terminate-instances`).
+- **Why not the Spot warning of S1** (found 2026-11-19 reading the
+  controller, `aws/karpenter-provider-aws` v1.15.1,
+  `pkg/controllers/interruption/`): `tests/live/spot-interruption.sh` only
+  puts a message on the SQS queue; nothing in AWS reclaims the instance. The
+  interruption controller is the only reader of that queue, so with
+  Karpenter at 0 the message waits, no node is lost and the scenario tests
+  nothing. The queue keeps a message 300 s (`message_retention_seconds`,
+  `modules/eks/karpenter.tf`), less than the page takes (`for: 5m` plus
+  evaluation and email): restored later, the warning has expired and
+  nothing ever happens; restored sooner, the drain runs with the controller
+  back. Either way, never the degraded window this scenario is about. A
+  real termination is what a lost Spot node is.
 - **Hypothesis**: `KarpenterControllerUnavailable` pages by email
   within 10 minutes of the scale-down (`KarpenterControllerDown` does not,
-  see section 3); with no controller, the interrupted node is **not**
-  replaced and the service runs on one replica (degraded, still within
-  SLO); the operator follows `docs/runbooks/karpenter.md`, restores the
-  controller through Argo CD, and the second replica is back within 5
-  minutes of the restore.
+  see section 3). After the termination nothing replaces the node: the Node
+  goes NotReady within about 50 s (node monitor grace period), its pod
+  leaves the Service endpoints, and the probe loses at most the requests
+  sent to the dead endpoint before that (each waits up to its 30 s
+  timeout: 2 or fewer). The pod is evicted by the `unreachable` taint after
+  300 s, without the PDB (a taint eviction is not an Eviction API call),
+  and its replacement stays Pending: the service runs on one replica
+  (degraded, still within SLO). The operator follows
+  `docs/runbooks/karpenter.md` and restores the controller through Argo
+  CD; Karpenter launches a node for the Pending pod at once (the second
+  replica is back within 5 minutes of the restore), and its NodeClaim
+  garbage collection (every 2 minutes) deletes the NodeClaim and Node of
+  the terminated instance.
 - **Control**: `KarpenterControllerDown` must stay silent (no target);
   recorded as the proof of the gap that `KarpenterControllerUnavailable`
   closes.
@@ -205,8 +231,9 @@ off first, as in `live-3.md` step 4):
     kubectl -n argocd patch application root --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n argocd patch application karpenter --type merge -p '{"spec":{"syncPolicy":null}}'
     kubectl -n kube-system scale deploy/karpenter --replicas=0
-    # wait for KarpenterControllerUnavailable in the email; then:
-    bash tests/live/spot-interruption.sh
+    # wait for KarpenterControllerUnavailable in the email; then terminate one replica's instance:
+    N=$(kubectl -n inference-test get pods -l app=qwen-0-5b-cpu -o jsonpath='{.items[0].spec.nodeName}'); I=$(kubectl get node "$N" -o jsonpath='{.spec.providerID}' | awk -F/ '{print $NF}'); echo "$N $I"; aws --region eu-west-1 ec2 terminate-instances --instance-ids "$I" --query 'TerminatingInstances[0].CurrentState.Name' --output text
+    kubectl get nodes -w                                              # NotReady within ~50 s; no new node while Karpenter is at 0
     # recover with docs/runbooks/karpenter.md, then restore Git's sync policies:
     kubectl apply -f gitops/root-app.yaml
 
