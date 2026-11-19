@@ -51,7 +51,7 @@ Status: **done** (in the code and checked by CI or proven live),
 | Control | What the platform does | Evidence | Check | Status |
 |---|---|---|---|---|
 | CC7.2, A.8.16 (monitoring) | 9 alert rules in Prometheus format, unit-tested; every metric they use is checked to be shipped | `observability/karpenter-rules.yaml`, `.test.yaml`, `ci/metrics-shipped.py` | promtool in CI | done |
-| CC7.2, A.8.15 (audit logging) | none: EKS control-plane logs off, no CloudTrail trail or VPC flow logs managed here | none | none | gap: standard fix is `enabled_cluster_log_types` (api, audit, authenticator) to CloudWatch with a retention, an organisation CloudTrail trail, flow logs on the VPC. Off today for cost on a Free Plan account |
+| CC7.2, A.8.15 (audit logging) | EKS control-plane logs api, audit and authenticator to CloudWatch Logs, in a log group Terraform owns with 7-day retention, removed by destroy | `modules/eks/main.tf` (`enabled_cluster_log_types`, `aws_cloudwatch_log_group.control_plane`) | `tests/control_plane_logs.tftest.hcl`; `scripts/verify-teardown.sh` (no log group left); game day #1 (live #5) | partial: in the code, first proven live in game day #1; no organisation CloudTrail trail or VPC flow logs managed here (standard fix: an organisation trail, flow logs on the VPC) |
 | CC7.3, CC7.4, A.5.24 to A.5.27 (incident response and learning) | Runbook per alert; paging by severity; game day with blameless postmortems designed and prepared | `docs/runbooks/`, `docs/gameday/` | game day #1 (live #5) | partial: designed, not yet run |
 | CC7.5 (recovery) | The whole platform is reproducible from Git: apply from the tag, GitOps bootstrap, verified teardown | `docs/runbooks/live.md`, `scripts/verify-teardown.sh` | four live sessions, each `TEARDOWN CLEAN` | done |
 
@@ -68,7 +68,7 @@ Status: **done** (in the code and checked by CI or proven live),
 
 | Gap | Standard fix | Cost |
 |---|---|---|
-| Audit logging (CC7.2, A.8.15) | EKS control-plane logs (audit at least) with 7-day retention for live sessions | a few cents per session; worth it in live #5 |
+| CloudTrail trail and VPC flow logs (CC7.2, A.8.15) | organisation trail to a locked S3 bucket; flow logs on the VPC | first trail free for management events; flow logs per GB |
 | Customer-managed KMS key (A.8.24) | `encryption_config` with a CMK, rotation on | ~1 USD a month per key while it exists |
 | Second reviewer and access review (A.5.18) | two required reviewers on `live` | needs a second person |
 | Staging (A.8.31) | ephemeral cluster per release | doubles live cost; not worth it at this scale |

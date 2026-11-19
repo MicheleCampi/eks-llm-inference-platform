@@ -384,4 +384,4 @@ Known and accepted for this project; each would be closed before production.
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
-  (audit logging off, no customer-managed KMS key, one reviewer) and their standard fixes. A map, not a certification.
+  (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since this release) and their standard fixes. A map, not a certification.

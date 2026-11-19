@@ -25,3 +25,15 @@ output "karpenter_role_arn" {
 output "karpenter_queue_name" {
   value = aws_sqs_queue.karpenter.name
 }
+
+output "control_plane_log_types" {
+  value = aws_eks_cluster.this.enabled_cluster_log_types
+}
+
+output "control_plane_log_group" {
+  value = one(aws_cloudwatch_log_group.control_plane[*].name)
+}
+
+output "control_plane_log_retention_days" {
+  value = one(aws_cloudwatch_log_group.control_plane[*].retention_in_days)
+}

@@ -16,6 +16,9 @@ chk "Elastic IPs in $R" "$(q ec2 describe-addresses --query 'length(Addresses)')
 chk "EBS volumes Project=$P" "$(q ec2 describe-volumes --filters Name=tag:Project,Values=$P --query 'length(Volumes)')"
 chk "SQS queues prefix $C" "$(q sqs list-queues --queue-name-prefix "$C" --query 'length(QueueUrls || `[]`)')"
 chk "Secrets $C/ (incl. planned deletion)" "$(q secretsmanager list-secrets --include-planned-deletion --filters Key=name,Values="$C/" --query 'length(SecretList)')"
+# Control-plane log group: stored logs are billed per GB-month, and a group
+# left behind (or one EKS created itself) would never expire.
+chk "CloudWatch log groups /aws/eks/$C/" "$(q logs describe-log-groups --log-group-name-prefix "/aws/eks/$C/" --query 'length(logGroups)')"
 # Not billable, but they block the next apply and leave state inconsistent
 # (live attempt 2: Karpenter's instance profile kept the node role alive).
 chk "IAM roles $C*" "$(q iam list-roles --query "length(Roles[?starts_with(RoleName,'$C')])")"

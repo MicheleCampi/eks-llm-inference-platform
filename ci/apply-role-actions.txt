@@ -104,3 +104,10 @@ sqs:ListQueueTags
 sqs:TagQueue
 sqs:DeleteQueue
 sts:GetCallerIdentity
+logs:CreateLogGroup
+logs:DeleteLogGroup
+logs:DescribeLogGroups
+logs:PutRetentionPolicy
+logs:ListTagsForResource
+logs:TagResource
+logs:UntagResource
