@@ -70,3 +70,23 @@ variable "fis_enabled" {
   type        = bool
   default     = false
 }
+
+variable "control_plane_log_types" {
+  description = "EKS control-plane log types sent to CloudWatch Logs (SOC 2 CC7.2, ISO 27001 A.8.15). api, audit and authenticator record who did what to the cluster; controllerManager and scheduler add volume without audit value here. Empty turns logging off."
+  type        = list(string)
+  default     = ["api", "audit", "authenticator"]
+  validation {
+    condition     = alltrue([for t in var.control_plane_log_types : contains(["api", "audit", "authenticator", "controllerManager", "scheduler"], t)])
+    error_message = "control_plane_log_types: only api, audit, authenticator, controllerManager, scheduler."
+  }
+}
+
+variable "control_plane_log_retention_days" {
+  description = "Retention of the control-plane log group. 7 days covers a live session and its postmortem; a production cluster would keep 90 days or more, or ship to a central archive."
+  type        = number
+  default     = 7
+  validation {
+    condition     = contains([1, 3, 5, 7, 14, 30, 60, 90, 120, 150, 180, 365], var.control_plane_log_retention_days)
+    error_message = "control_plane_log_retention_days must be a CloudWatch Logs retention value (1 to 365 days)."
+  }
+}

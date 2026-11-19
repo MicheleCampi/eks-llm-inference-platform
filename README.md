@@ -305,9 +305,9 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.4                      # the release the cluster runs
+    git checkout v2.3.5                      # the release the cluster runs
     kubectl create ns argocd
-    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.3 vendored, SHA-256 checked in CI
+    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.14 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter
@@ -384,4 +384,4 @@ Known and accepted for this project; each would be closed before production.
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
-  (audit logging off, no customer-managed KMS key, one reviewer) and their standard fixes. A map, not a certification.
+  (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since this release) and their standard fixes. A map, not a certification.

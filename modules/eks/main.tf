@@ -34,7 +34,22 @@ resource "aws_eks_cluster" "this" {
     endpoint_private_access = true
   }
 
-  depends_on = [aws_iam_role_policy_attachment.cluster_policy]
+  enabled_cluster_log_types = var.control_plane_log_types
+
+  # The log group must exist first: if EKS creates it, it never expires and
+  # outlives terraform destroy (scripts/verify-teardown.sh checks it is gone).
+  depends_on = [aws_iam_role_policy_attachment.cluster_policy, aws_cloudwatch_log_group.control_plane]
+}
+
+# Control-plane logs (api, audit, authenticator): who did what to the
+# cluster, for the audit trail (docs/compliance-map.md, CC7.2 and A.8.15).
+# Owned by Terraform so retention is set and destroy removes it. Encrypted
+# with the CloudWatch Logs service key; a customer-managed key is the CMK gap
+# in the compliance map.
+resource "aws_cloudwatch_log_group" "control_plane" {
+  count             = length(var.control_plane_log_types) > 0 ? 1 : 0
+  name              = "/aws/eks/${var.cluster_name}/cluster"
+  retention_in_days = var.control_plane_log_retention_days
 }
 
 resource "aws_iam_role" "node" {
