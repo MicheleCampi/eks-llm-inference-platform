@@ -1,0 +1,23 @@
+# A batch job of 1 CPU / 512Mi that runs 60 s, created suspended: Kueue
+# unsuspends it when the ClusterQueue has quota. run.sh sets the namespace
+# and the name; 3 per team = 6 CPU asked against a 2 CPU quota.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  generateName: eval-
+  labels:
+    kueue.x-k8s.io/queue-name: batch
+spec:
+  suspend: true
+  parallelism: 1
+  completions: 1
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: work
+          image: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+          command: ["sh", "-c", "echo start $$(date -u +%T); sleep 60; echo end $$(date -u +%T)"]
+          resources:
+            requests: {cpu: "1", memory: 512Mi}
+            limits: {cpu: "1", memory: 512Mi}

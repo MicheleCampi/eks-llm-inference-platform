@@ -1,0 +1,39 @@
+# Path B: KServe v0.21.0, Standard (RawDeployment) mode, no Knative or Istio.
+# A custom predictor container with the SAME image, command, flags and env
+# the operator generates (its src/main.rs at v0.13.0), so only the control
+# plane differs. KServe's own huggingface runtime would change the server.
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen
+  namespace: cmp-kserve
+  annotations:
+    serving.kserve.io/deploymentMode: Standard
+spec:
+  predictor:
+    minReplicas: 1
+    maxReplicas: 1
+    containers:
+      - name: kserve-container
+        image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
+        command: ["vllm", "serve"]
+        args: ["Qwen/Qwen2.5-0.5B-Instruct", "--host", "0.0.0.0", "--port", "8000", "--enforce-eager", "--max-model-len", "2048", "--dtype", "bfloat16"]
+        env:
+          - name: VLLM_CPU_KVCACHE_SPACE
+            value: "1"
+        ports:
+          - containerPort: 8000
+            protocol: TCP
+        readinessProbe:
+          httpGet: {path: /health, port: 8000}
+          initialDelaySeconds: 5
+          periodSeconds: 5
+          failureThreshold: 60
+        resources:
+          requests: {cpu: "1", memory: 6Gi}
+          limits: {cpu: "1", memory: 6Gi}
+        volumeMounts:
+          - {name: dshm, mountPath: /dev/shm}
+    volumes:
+      - name: dshm
+        emptyDir: {medium: Memory}
