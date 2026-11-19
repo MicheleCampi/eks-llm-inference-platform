@@ -29,9 +29,15 @@ spec:
           initialDelaySeconds: 5
           periodSeconds: 5
           failureThreshold: 60
+        # Same as the operator v0.13.0 generates: CPU as a request only (no
+        # CPU limit, it throttles the tokenizer), memory request = limit.
+        # KServe's defaulter adds a 1 CPU limit when none is set, so the limit
+        # is the node's 4 cores (optim-dev), which is no limit in effect.
+        # Run 1 had limits.cpu 1: p50 12.49 s against 2.21 s, a manifest
+        # error, not a KServe result. run.sh logs the pod's real resources.
         resources:
           requests: {cpu: "1", memory: 6Gi}
-          limits: {cpu: "1", memory: 6Gi}
+          limits: {cpu: "4", memory: 6Gi}
         volumeMounts:
           - {name: dshm, mountPath: /dev/shm}
     volumes:
