@@ -100,6 +100,7 @@ operator)
   say "READY after $(since "$t0") s (apply -> VllmService Ready)"
   mem "model ready"
   say "objects created: $(kubectl -n cmp-operator get all,networkpolicy -o name | tr '\n' ' ')"
+  say "pod resources: $(kubectl -n cmp-operator get pods -o jsonpath='{.items[0].spec.containers[0].resources}')"
   probe cmp-operator qwen 8000
   mem "after 20 requests"
   kubectl delete -f manifests/vllmservice.yaml --wait | tee -a "$LOG"
@@ -113,6 +114,7 @@ kserve)
   say "READY after $(since "$t0") s (apply -> InferenceService Ready)"
   mem "model ready"
   say "objects created: $(kubectl -n cmp-kserve get all,hpa -o name | tr '\n' ' ')"
+  say "pod resources: $(kubectl -n cmp-kserve get pods -o jsonpath='{.items[0].spec.containers[0].resources}')"
   svc=$(kubectl -n cmp-kserve get svc -o name | grep predictor | head -1 | cut -d/ -f2)
   port=$(kubectl -n cmp-kserve get svc "$svc" -o jsonpath='{.spec.ports[0].port}')
   say "predictor service $svc port $port"
