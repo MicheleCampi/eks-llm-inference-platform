@@ -58,9 +58,13 @@ since() { echo $(( $(date +%s) - $1 )); }
 case "$phase" in
 up)
   for t in docker kind kubectl helm git curl python3; do need "$t"; done
-  avail_mib=$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)
-  [ "$avail_mib" -ge 6656 ] || { echo "only ${avail_mib} MiB of RAM available, need 6656 (6.5 GiB)"; exit 1; }
-  say "RAM available before kind: ${avail_mib} MiB"
+  # The RAM check applies to a new cluster only: a re-run of up on an
+  # existing one would count the cluster's own memory against it.
+  if ! kind get clusters | grep -qx "$CLUSTER"; then
+    avail_mib=$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)
+    [ "$avail_mib" -ge 6656 ] || { echo "only ${avail_mib} MiB of RAM available, need 6656 (6.5 GiB)"; exit 1; }
+    say "RAM available before kind: ${avail_mib} MiB"
+  fi
   say "kind $(kind version)"
   kind get clusters | grep -qx "$CLUSTER" || kind create cluster --name "$CLUSTER" --wait 120s | tee -a "$LOG"
   kubectl config use-context "kind-$CLUSTER" >/dev/null
@@ -79,9 +83,12 @@ up)
   helm upgrade -i vcso .operator-src/chart -n vllm-operator-system --create-namespace --set example.enabled=false --wait | tee -a "$LOG"
   say "Kueue $KUEUE_VERSION"
   helm upgrade -i kueue oci://registry.k8s.io/kueue/charts/kueue --version "$KUEUE_VERSION" -n kueue-system --create-namespace --wait | tee -a "$LOG"
+  # Pulled by the node's own containerd. Not kind load docker-image: with a
+  # digest reference docker save drops the name, containerd imports it as
+  # docker.io/library/import-<date>, and the kubelet fails with
+  # CreateContainerError (optim-dev, 2026-11-19).
   say "pre-pulling the vLLM CPU image into the node once (1.12 GB), so neither path pays the pull"
-  docker pull -q "$VLLM_CPU_IMAGE" | tee -a "$LOG"
-  kind load docker-image "$VLLM_CPU_IMAGE" --name "$CLUSTER" | tee -a "$LOG"
+  docker exec "$CLUSTER-control-plane" crictl pull "$VLLM_CPU_IMAGE" | tee -a "$LOG"
   mem "control planes up, no model"
   say "UP DONE"
   ;;
