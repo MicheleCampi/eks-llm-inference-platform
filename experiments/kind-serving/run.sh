@@ -9,7 +9,11 @@
 #   bash experiments/kind-serving/run.sh down      delete the kind cluster
 # Every phase appends to experiments/kind-serving/results/<phase>.log.
 # Needs: docker, kind >= v0.30.0, kubectl, helm 3, git, curl, python3;
-# about 10 GiB of free RAM (one 6 GiB model at a time).
+# at least 6.5 GiB of available RAM: the model peaked at 5.0 GiB in the Docker
+# pre-check of live #4 (6 GiB limit, VLLM_CPU_KVCACHE_SPACE=1), plus about
+# 1.5 GiB for kind, cert-manager, KServe, the operator and Kueue. One model at
+# a time; the node's memory is logged in each serving phase, so the margin is
+# measured, not assumed.
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./versions.env
@@ -38,14 +42,18 @@ print(f"answers 200: {len(ok)}/{len(rows)}; p50 {ok[len(ok)//2]:.2f} s; max {ok[
   kill "$pf" 2>/dev/null || true
 }
 
+# Memory of the kind node (the whole cluster) as Docker sees it.
+mem() { say "node memory ($1): $(docker stats --no-stream --format '{{.MemUsage}}' "$CLUSTER-control-plane")"; }
+
 # Seconds from a start epoch to now.
 since() { echo $(( $(date +%s) - $1 )); }
 
 case "$phase" in
 up)
   for t in docker kind kubectl helm git curl python3; do need "$t"; done
-  free_gib=$(awk '/MemAvailable/ {printf "%d", $2/1048576}' /proc/meminfo)
-  [ "$free_gib" -ge 10 ] || { echo "only ${free_gib} GiB free, need 10"; exit 1; }
+  avail_mib=$(awk '/MemAvailable/ {printf "%d", $2/1024}' /proc/meminfo)
+  [ "$avail_mib" -ge 6656 ] || { echo "only ${avail_mib} MiB of RAM available, need 6656 (6.5 GiB)"; exit 1; }
+  say "RAM available before kind: ${avail_mib} MiB"
   say "kind $(kind version)"
   kind get clusters | grep -qx "$CLUSTER" || kind create cluster --name "$CLUSTER" --wait 120s | tee -a "$LOG"
   kubectl config use-context "kind-$CLUSTER" >/dev/null
@@ -67,6 +75,7 @@ up)
   say "pre-pulling the vLLM CPU image into the node once (1.12 GB), so neither path pays the pull"
   docker pull -q "$VLLM_CPU_IMAGE" | tee -a "$LOG"
   kind load docker-image "$VLLM_CPU_IMAGE" --name "$CLUSTER" | tee -a "$LOG"
+  mem "control planes up, no model"
   say "UP DONE"
   ;;
 operator)
@@ -75,8 +84,10 @@ operator)
   kubectl apply -f manifests/vllmservice.yaml | tee -a "$LOG"
   kubectl -n cmp-operator wait vllmservice/qwen --for=jsonpath='{.status.phase}'=Ready --timeout=600s | tee -a "$LOG"
   say "READY after $(since "$t0") s (apply -> VllmService Ready)"
+  mem "model ready"
   say "objects created: $(kubectl -n cmp-operator get all,networkpolicy -o name | tr '\n' ' ')"
   probe cmp-operator qwen 8000
+  mem "after 20 requests"
   kubectl delete -f manifests/vllmservice.yaml --wait | tee -a "$LOG"
   kubectl delete namespace cmp-operator --wait | tee -a "$LOG"
   ;;
@@ -86,11 +97,13 @@ kserve)
   kubectl apply -f manifests/inferenceservice.yaml | tee -a "$LOG"
   kubectl -n cmp-kserve wait inferenceservice/qwen --for=condition=Ready --timeout=600s | tee -a "$LOG"
   say "READY after $(since "$t0") s (apply -> InferenceService Ready)"
+  mem "model ready"
   say "objects created: $(kubectl -n cmp-kserve get all,hpa -o name | tr '\n' ' ')"
   svc=$(kubectl -n cmp-kserve get svc -o name | grep predictor | head -1 | cut -d/ -f2)
   port=$(kubectl -n cmp-kserve get svc "$svc" -o jsonpath='{.spec.ports[0].port}')
   say "predictor service $svc port $port"
   probe cmp-kserve "$svc" "$port"
+  mem "after 20 requests"
   kubectl delete -f manifests/inferenceservice.yaml --wait | tee -a "$LOG"
   kubectl delete namespace cmp-kserve --wait | tee -a "$LOG"
   ;;
