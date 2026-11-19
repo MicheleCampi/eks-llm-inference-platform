@@ -382,6 +382,10 @@ Known and accepted for this project; each would be closed before production.
   (no endpoint, no `up` series).
 - When to run this instead of ECS Fargate, and how to move:
   [ADR 0001](docs/adr/0001-ecs-or-eks.md).
+- Why an own operator and not KServe, measured on kind (same container,
+  Ready 48 s and p50 about 2.2 s in both; operator control plane about 20
+  times smaller, NetworkPolicy by default), and when Kueue is worth it:
+  [ADR 0002](docs/adr/0002-own-operator-or-kserve.md).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
-  (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since this release) and their standard fixes. A map, not a certification.
+  (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since v2.3.5) and their standard fixes. A map, not a certification.

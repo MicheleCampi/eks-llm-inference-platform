@@ -1,6 +1,8 @@
 # Serving control planes compared on kind: own operator, KServe, Kueue
 
-Status: **protocol fixed, not run** (2026-11-18, D-0158 gap G3). Zero cloud
+Status: **run 2026-11-19 on optim-dev**; results in
+[`docs/evidence/kind-serving-2026-11-19.md`](../../docs/evidence/kind-serving-2026-11-19.md),
+decision in [ADR 0002](../../docs/adr/0002-own-operator-or-kserve.md). Protocol fixed 2026-11-18 (D-0158 gap G3). Zero cloud
 cost: kind on optim-dev, CPU only. The results become ADR 0002 ("own operator
 or KServe, and where Kueue fits"), whatever they say.
 
