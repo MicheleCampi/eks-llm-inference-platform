@@ -9,8 +9,10 @@ groups:
     rules:
       - alert: KarpenterNodePoolCpuLimitReached
         # The NodePool provisioned all the CPU its limits allow: new pods stay
-        # Pending until something is removed or the limit is raised.
-        expr: max by (nodepool) (karpenter_nodepools_usage{resource_type="cpu"}) >= on (nodepool) max by (nodepool) (karpenter_nodepools_limit{resource_type="cpu"})
+        # Pending until something is removed or the limit is raised. Pools with
+        # a CPU limit of 0 are gated on purpose (pool gpu): 0 >= 0 paged for a
+        # whole session in game day #1 (finding 1), so they are left out.
+        expr: max by (nodepool) (karpenter_nodepools_usage{resource_type="cpu"}) >= on (nodepool) max by (nodepool) (karpenter_nodepools_limit{resource_type="cpu"}) and on (nodepool) max by (nodepool) (karpenter_nodepools_limit{resource_type="cpu"}) > 0
         for: 5m
         labels:
           severity: page
@@ -91,6 +93,19 @@ groups:
         # away from users, but which never becomes Ready. A ticket: the old
         # replicas still serve. kube-system is left to EKS and its add-ons.
         expr: sum by (namespace, pod, container) (increase(kube_pod_container_status_restarts_total{namespace!="kube-system"}[10m])) >= 3
+        labels:
+          severity: ticket
+        annotations:
+          runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/workloads.md
+      - alert: ModelReplicasBelowSpec
+        # A model or team Deployment has fewer available replicas than it asks
+        # for, for 5 minutes: a lost node not replaced, a replica Pending. A
+        # ticket: the other replicas still serve. Game day #1 S3 lost a node
+        # and no alert said so (postmortem-2026-11-20-s3.md, action item 4).
+        # A make-before-break rollout keeps available at spec, so a bad
+        # change alone (S2) does not fire it: PodCrashLooping does.
+        expr: max by (namespace, deployment) (kube_deployment_status_replicas_available{namespace=~"inference-.*|team-.*"}) < on (namespace, deployment) max by (namespace, deployment) (kube_deployment_spec_replicas{namespace=~"inference-.*|team-.*"})
+        for: 5m
         labels:
           severity: ticket
         annotations:
