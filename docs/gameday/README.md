@@ -1,6 +1,6 @@
 # Game day #1: incident response on the EKS inference platform
 
-Status: **designed and prepared, not run**. Written with the nodes off (D-0158, 2026-11-18).
+Status: **run on 2026-11-20 (live #5, v2.3.5)**: all 3 scenarios within SLO, one hypothesis refuted in S3. Evidence: [gameday-2026-11-20.md](../evidence/gameday-2026-11-20.md); postmortem: [postmortem-2026-11-20-s3.md](postmortem-2026-11-20-s3.md). Designed with the nodes off (D-0158, 2026-11-18).
 It runs as live #5, only after its own BUDGET entry and an explicit go from
 the operator. Results go to `docs/evidence/gameday-<date>.md` and one
 blameless postmortem per scenario (`postmortem-template.md`).
