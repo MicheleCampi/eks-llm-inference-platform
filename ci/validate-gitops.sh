@@ -146,7 +146,7 @@ mkdir -p "$W/neg-iam" && printf 'resource "aws_iam_role" "x" {\n  name = "llm-in
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
 # ci/fixtures: deliberately bad manifests for negative cases; ci/karpenter: upstream reference copy. Neither is deployed.
 check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-dirs gitops/argocd/upstream --skip-files ci/karpenter/cloudformation-v1.15.3.yaml .
-# Charts as Argo CD deploys them: app values, no helm test hooks (Argo CD v3.5.8 skips them).
+# Charts as Argo CD deploys them: app values, no helm test hooks (Argo CD v3.6.2 skips them).
 mkdir -p "$W/charts" "$W/neg-chart"
 yq '.spec.source.helm.valuesObject' gitops/apps/kyverno.yaml > "$W/kyv-values.yaml"
 yq '.spec.source.helm.valuesObject' gitops/apps/karpenter.yaml > "$W/karp-values.yaml"
@@ -154,7 +154,7 @@ helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-
 check karpenter-deployed-render retry sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system -f '$W/karp-values.yaml' > '$W/charts/karpenter.yaml' 2>/dev/null"
 cp "$W/eso-deployed.yaml" "$W/charts/eso.yaml"; cp "$W/alloy-render.yaml" "$W/charts/alloy.yaml"; cp "$W/ksm-render.yaml" "$W/charts/ksm.yaml"; cp "$W/op-deployed.yaml" "$W/charts/operator.yaml"
 TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile ci/trivyignore-charts.yaml)
-check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.5.8.yaml' | sha256sum -c -"
+check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.6.2.yaml' | sha256sum -c -"
 check argocd-overlay-build sh -c "kustomize build gitops/argocd > '$W/charts/argocd.yaml'"
 # Dex (SSO, unused) stays out of the overlay: no object named argocd-dex-server*
 # and no dex image. The server keeps an optional reference to the
@@ -174,7 +174,7 @@ check root-finalizers "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-fi
 sed -n '1p' "$W/root-finalizers.log" | sed 's/^/  /'
 yq 'del(.spec.ignoreDifferences)' gitops/root-app.yaml > "$W/neg-root.yaml"
 expect_reject neg-root-finalizers "root does not ignore pre-delete-finalizer" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-finalizers.py "$W/neg-root.yaml" "$W"/charts/*.yaml
-{ cat gitops/argocd/upstream/install-v3.5.8.yaml; echo "# tampered"; } > "$W/argocd-tampered.yaml"
+{ cat gitops/argocd/upstream/install-v3.6.2.yaml; echo "# tampered"; } > "$W/argocd-tampered.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests > "$W/neg-chart/kyverno.yaml"
 echo "== AppProject platform: every cluster-scoped kind its apps create is whitelisted"
 OPV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)

@@ -4,5 +4,3 @@
 # Before the expiry the image is reported as BASELINE (not a failure); after
 # it the image fails again. New images and new CRITICALs on other images are
 # never covered. Expiry at most 30 days out.
-quay.io/argoproj/argocd:v3.5.8 2026-12-18 latest 3.5 patch: down from 3 CRITICAL and 119 HIGH (3.4.14) to 1 CRITICAL and 83 HIGH; the one left is Go stdlib CVE-2025-68121 (crypto/tls session resumption) in the kustomize binary the image bundles, run by the repo-server on manifests from this repository only: fix = an Argo CD patch that rebuilds kustomize with Go >= 1.24.13
-public.ecr.aws/docker/library/redis:8.2.3-alpine 2026-12-18 shipped by the Argo CD install manifest, unchanged in 3.4.14 and in 3.5.8: fix = an upstream 3.4 patch with a newer Redis, or an images override in gitops/argocd to a Redis 8.2 patch that scans clean
