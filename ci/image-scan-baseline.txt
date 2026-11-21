@@ -4,3 +4,4 @@
 # Before the expiry the image is reported as BASELINE (not a failure); after
 # it the image fails again. New images and new CRITICALs on other images are
 # never covered. Expiry at most 30 days out.
+docker.io/vllm/vllm-openai-cpu:v0.34.0-x86_64@sha256:b14c3a46a4b08852b32528643e070d57f3731cccb0fa33ef86d4f3b3f8ac36c4 2026-12-18 test workload only (tests/live, tests/gameday), applied by hand in live sessions and deleted before destroy; both CRITICALs (CVE-2026-89652, CVE-2026-98805) are in linux-libc-dev, kernel headers in the image, not the kernel that runs (the node kernel does): fix = the next vLLM CPU release rebuilt on linux-libc-dev 5.15.0-204.214 or later (v0.34.0 is the latest on 2026-11-21)
