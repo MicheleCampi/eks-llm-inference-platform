@@ -8,7 +8,7 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.5 ran game day #1 under BUDGET A-019; v2.3.7 (pool system tainted, Argo CD 3.5.8, zone spread) needs its own entry).
+  (v2.3.5 ran game day #1 under BUDGET A-019; v2.3.8 (pool system tainted, Argo CD 3.5.8, zone spread, warm Ready) needs its own entry).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
   read-only): the apply role can do what apply and destroy need, and no more.
@@ -26,13 +26,13 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.3.7
+    git checkout v2.3.8
 
-Read this runbook from main: commits after v2.3.7 change documentation only.
+Read this runbook from main: commits after v2.3.8 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.3.7
+    gh workflow run apply.yml --ref v2.3.8
     gh run watch
 
 Open the run: the plan job summary shows the plan and its sha256. Expected:
@@ -80,7 +80,7 @@ The token is typed, never pasted in a file or a chat:
 `PROM_URL` is the remote-write URL and `PROM_USER` the instance id of the
 Prometheus data source (Grafana Cloud, stack details).
 
-    gh workflow run observability.yml --ref v2.3.7
+    gh workflow run observability.yml --ref v2.3.8
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -153,7 +153,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete ec2nodeclass default gpu   # Karpenter deletes the instance profile it created
     kubectl wait --for=delete ec2nodeclass/default ec2nodeclass/gpu --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.3.7
+    gh workflow run destroy.yml --ref v2.3.8
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session; the session's access policy (step 4) is deleted.
