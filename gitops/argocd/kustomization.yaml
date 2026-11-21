@@ -9,6 +9,9 @@
 #    argocd-server Dex settings are optional (configMapKeyRef optional, TLS
 #    secret volume optional), so the server runs without it. To add SSO later:
 #    delete these patches and set dex.config in argocd-cm.
+#  - every Deployment and StatefulSet on pool system with the
+#    CriticalAddonsOnly toleration: that node group is tainted so only
+#    platform controllers run there (modules/eks/main.tf, game day #1 S3).
 # Apply: kubectl apply -k gitops/argocd --server-side
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
@@ -16,6 +19,26 @@ namespace: argocd
 resources:
   - upstream/install-v3.4.14.yaml
 patches:
+  - target: {kind: Deployment}
+    patch: |-
+      apiVersion: apps/v1
+      kind: Deployment
+      metadata: {name: any}
+      spec:
+        template:
+          spec:
+            nodeSelector: {platform.michelecampi.dev/pool: system}
+            tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
+  - target: {kind: StatefulSet}
+    patch: |-
+      apiVersion: apps/v1
+      kind: StatefulSet
+      metadata: {name: any}
+      spec:
+        template:
+          spec:
+            nodeSelector: {platform.michelecampi.dev/pool: system}
+            tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
   - target:
       kind: (Deployment|StatefulSet)
       name: argocd-(applicationset-controller|repo-server|server|application-controller)

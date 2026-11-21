@@ -19,6 +19,9 @@ spec:
         controller:
           type: deployment
           replicas: 1
+          # Pool system, tainted CriticalAddonsOnly (modules/eks/main.tf).
+          nodeSelector: {platform.michelecampi.dev/pool: system}
+          tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
           volumes:
             extra: [{name: alloy-storage, emptyDir: {}}]
         alloy:

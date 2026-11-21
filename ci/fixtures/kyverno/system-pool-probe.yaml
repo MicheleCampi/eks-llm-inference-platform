@@ -1,0 +1,16 @@
+# Fixture for ci/validate-gitops.sh (policy restrict-system-pool): the game day
+# probe's pod as its ReplicaSet creates it (tests/gameday/probe.yaml). The one
+# workload admitted on pool system.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: probe-abc12
+  namespace: inference-test
+  labels: {app: probe, inference.michelecampi.dev/client: qwen-0-5b-cpu}
+spec:
+  nodeSelector: {platform.michelecampi.dev/pool: system}
+  tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
+  containers:
+    - name: curl
+      image: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+      resources: {requests: {cpu: 10m, memory: 16Mi}}

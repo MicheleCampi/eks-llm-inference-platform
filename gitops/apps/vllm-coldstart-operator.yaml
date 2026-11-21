@@ -7,13 +7,16 @@ spec:
   project: platform
   source:
     repoURL: https://github.com/MicheleCampi/vllm-coldstart-operator
-    targetRevision: v0.13.0
+    targetRevision: v0.14.0
     path: chart
     helm:
       releaseName: vcso
-      parameters:
-        - name: example.enabled
-          value: "false"
+      valuesObject:
+        example: {enabled: false}
+        # Pool system, tainted CriticalAddonsOnly (modules/eks/main.tf);
+        # values added in operator v0.14.0.
+        nodeSelector: {platform.michelecampi.dev/pool: system}
+        tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
   destination:
     server: https://kubernetes.default.svc
     namespace: vllm-operator-system

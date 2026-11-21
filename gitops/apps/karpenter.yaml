@@ -14,6 +14,11 @@ spec:
         settings:
           clusterName: llm-inference
           interruptionQueue: llm-inference
+        # Pool system (modules/eks/main.tf): never on a node Karpenter manages.
+        # The chart already tolerates CriticalAddonsOnly and requires
+        # karpenter.sh/nodepool DoesNotExist; a map value replaces the chart's
+        # nodeSelector, so kubernetes.io/os stays listed.
+        nodeSelector: {kubernetes.io/os: linux, platform.michelecampi.dev/pool: system}
         controller:
           resources:
             requests: {cpu: "1", memory: 1Gi}

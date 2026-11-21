@@ -22,5 +22,14 @@
       "cpu": "100m",
       "memory": "200Mi"
     }
-  }
+  },
+  "nodeSelector": {
+    "platform.michelecampi.dev/pool": "system"
+  },
+  "tolerations": [
+    {
+      "key": "CriticalAddonsOnly",
+      "operator": "Exists"
+    }
+  ]
 }

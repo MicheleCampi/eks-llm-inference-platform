@@ -1,0 +1,50 @@
+# Pool system (the EKS managed node group, On-Demand, outside Karpenter) runs
+# the platform's controllers only. Its taint CriticalAddonsOnly=true:NoSchedule
+# (modules/eks/main.tf) keeps out every pod that does not tolerate it; this
+# policy stops a workload from simply adding the toleration. Game day #1, S3
+# postmortem: with Karpenter down, a model replica took the capacity Argo CD,
+# Karpenter and ESO need to recover the cluster.
+#
+# Denied outside the platform namespaces: a toleration of CriticalAddonsOnly,
+# and a toleration with no key and operator Exists (it tolerates every taint).
+# One exception, by name and label in one namespace: the game day SLI probe
+# (tests/gameday/probe.yaml) runs on pool system on purpose, so it does not
+# share the fate of the Spot nodes it measures. inference-test holds platform
+# test fixtures only, applied by hand from this repository; no team owns it.
+apiVersion: policies.kyverno.io/v1
+kind: ValidatingPolicy
+metadata:
+  name: restrict-system-pool
+  annotations:
+    policies.kyverno.io/description: Only platform controllers tolerate the taint of pool system; workloads run on the Karpenter pools.
+spec:
+  validationActions: [Deny]
+  # Pods only, no autogen: the probe exception reads the Pod's own namespace
+  # and labels. A Deployment that asks for the toleration is admitted and its
+  # ReplicaSet reports FailedCreate with this message.
+  autogen:
+    podControllers:
+      controllers: []
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kyverno, argocd, external-secrets, monitoring, vllm-operator-system]
+  matchConditions:
+    - name: not-the-gameday-probe
+      expression: >-
+        !(object.metadata.namespace == 'inference-test'
+        && has(object.metadata.labels) && 'app' in object.metadata.labels
+        && object.metadata.labels['app'] == 'probe')
+  validations:
+    - expression: >-
+        !has(object.spec.tolerations) || object.spec.tolerations.all(t,
+        !((has(t.key) && t.key == 'CriticalAddonsOnly')
+        || ((!has(t.key) || t.key == '') && has(t.operator) && t.operator == 'Exists')))
+      message: "pool system is reserved for platform controllers: tolerating CriticalAddonsOnly (or every taint) is not allowed in this namespace; workloads run on the Karpenter pools"

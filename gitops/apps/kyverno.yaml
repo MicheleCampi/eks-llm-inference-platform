@@ -16,6 +16,12 @@ spec:
     helm:
       releaseName: kyverno
       valuesObject:
+        # Pool system, tainted CriticalAddonsOnly (modules/eks/main.tf). The
+        # global values apply to every controller and hook Job. A map value
+        # replaces the chart's nodeSelector, so kubernetes.io/os stays listed.
+        global:
+          nodeSelector: {kubernetes.io/os: linux, platform.michelecampi.dev/pool: system}
+          tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
         admissionController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
         backgroundController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
         cleanupController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}

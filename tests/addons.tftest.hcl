@@ -54,6 +54,14 @@ run "pinned_and_ha" {
   }
 
   assert {
+    condition = (length(aws_eks_node_group.default.taint) == 1
+    && one(aws_eks_node_group.default.taint).key == "CriticalAddonsOnly"
+    && one(aws_eks_node_group.default.taint).value == "true"
+    && one(aws_eks_node_group.default.taint).effect == "NO_SCHEDULE")
+    error_message = "pool system is tainted CriticalAddonsOnly=true:NoSchedule, so only platform controllers run there (game day #1, S3)"
+  }
+
+  assert {
     condition     = aws_eks_addon.pod_identity_agent.addon_version == "v1.4.1-eksbuild.3"
     error_message = "eks-pod-identity-agent must be pinned"
   }

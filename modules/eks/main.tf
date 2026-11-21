@@ -93,11 +93,24 @@ resource "aws_eks_node_group" "default" {
   release_version = "1.36.5-20261107"
 
   # Pool "system": platform controllers (Argo CD, Karpenter itself, ESO,
-  # Kyverno, Alloy) on stable On-Demand capacity that Karpenter does not
-  # manage, so Karpenter never drains the node it runs on. Karpenter pools are
-  # "general" and "gpu" (gitops/karpenter/).
+  # Kyverno, Alloy, the operator) on stable On-Demand capacity that Karpenter
+  # does not manage, so Karpenter never drains the node it runs on. Karpenter
+  # pools are "general" and "gpu" (gitops/karpenter/).
   labels = {
     "platform.michelecampi.dev/pool" = "system"
+  }
+
+  # The label attracts the controllers; the taint keeps everything else out
+  # (game day #1, S3 postmortem: a model replica ran here once Karpenter was
+  # down). CriticalAddonsOnly is the EKS convention for a dedicated add-on
+  # node group: CoreDNS and the metrics-server add-on tolerate it by default,
+  # the DaemonSets of vpc-cni, kube-proxy and pod identity tolerate every
+  # taint, and each platform chart sets the toleration
+  # (ci/check-system-pool.py). Teams cannot (policy restrict-system-pool).
+  taint {
+    key    = "CriticalAddonsOnly"
+    value  = "true"
+    effect = "NO_SCHEDULE"
   }
 
   launch_template {

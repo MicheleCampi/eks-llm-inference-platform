@@ -122,8 +122,9 @@ yq '.spec.source.helm.valuesObject' gitops/apps/external-secrets.yaml > "$W/eso-
 helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n external-secrets -f "$W/eso-values.yaml" > "$W/eso-deployed.yaml"
 OV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
 check operator-src retry sh -c "rm -rf '$W/op' && git clone -q --depth 1 --branch '$OV' https://github.com/MicheleCampi/vllm-coldstart-operator.git '$W/op'"
-# example.enabled=false, as the Application's helm parameters set it.
-helm template vcso "$W/op/chart" -n vllm-operator-system --set example.enabled=false > "$W/op-deployed.yaml"
+# With the Application's values (example off, pool system), as Argo CD deploys it.
+yq '.spec.source.helm.valuesObject' gitops/apps/vllm-coldstart-operator.yaml > "$W/op-values.yaml"
+helm template vcso "$W/op/chart" -n vllm-operator-system -f "$W/op-values.yaml" > "$W/op-deployed.yaml"
 check platform-complies "${KY[@]}" --resource "$W/eso-deployed.yaml" --resource "$W/alloy-render.yaml" --resource "$W/op-deployed.yaml" --resource "$W/ksm-render.yaml"
 grep -h '^pass' "$W/platform-complies.log" | sed 's/^/  /'
 check exempt-namespace-ignored "${KY[@]}" --resource ci/fixtures/kyverno/exempt.yaml
@@ -214,6 +215,18 @@ sed 's/app: qwen-0-5b-cpu, app.kubernetes/app: other, app.kubernetes/g' ci/fixtu
 cmp -s ci/fixtures/kyverno/vllm-2-replicas.yaml "$W/neg-gameday-nopdb.yaml" && { echo "FAIL neg-gameday-nopdb: mutation changed nothing"; fail=1; }
 expect_reject neg-gameday-nopdb "needs a PodDisruptionBudget" "${KY[@]}" --resource "$W/neg-gameday-nopdb.yaml"
 check gameday-sli python3 -I ci/test-gameday-sli.py
+# restrict-system-pool (game day #1, S3): the probe's pod is admitted on pool
+# system; the same toleration from a team, or a wildcard toleration, is denied
+# (self-test below).
+check system-pool-probe "${KY[@]}" --resource ci/fixtures/kyverno/system-pool-probe.yaml
+grep -q 'fail: 0, warn: 0, error: 0' "$W/system-pool-probe.log" || { echo "FAIL system-pool-probe: not every policy passed"; fail=1; }
+# Every platform workload, as Argo CD deploys it, is pinned to pool system and
+# tolerates its taint (charts, the Argo CD overlay, the metrics-server add-on).
+check system-pool-platform "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-system-pool.py modules/eks/addons/metrics-server.json "$W"/charts/*.yaml
+sed -n '$p' "$W/system-pool-platform.log" | sed 's/^/  /'
+yq 'del(.spec.source.helm.valuesObject.tolerations)' gitops/apps/vllm-coldstart-operator.yaml | yq '.spec.source.helm.valuesObject' > "$W/neg-op-values.yaml"
+helm template vcso "$W/op/chart" -n vllm-operator-system -f "$W/neg-op-values.yaml" > "$W/neg-op.yaml"
+expect_reject neg-system-pool-no-toleration "Deployment/vcso-vllm-coldstart-operator: no CriticalAddonsOnly toleration" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-system-pool.py modules/eks/addons/metrics-server.json "$W/neg-op.yaml"
 echo "== self-test: each case must be rejected for the reason named"
 sed 's/targetRevision: v[0-9.]*/targetRevision: main/' gitops/apps/policies.yaml > "$W/neg-pin.yaml"
 expect_reject neg-release-pin-main "not a release tag" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-release-pin.py https://github.com/MicheleCampi/eks-llm-inference-platform gitops/root-app.yaml "$W/neg-pin.yaml"
@@ -290,6 +303,8 @@ expect_reject neg-policy-pdb-missing "needs a PodDisruptionBudget" "${KY[@]}" --
 expect_reject neg-policy-privileged "privileged containers are not allowed" "${KY[@]}" --resource ci/fixtures/kyverno/privileged.yaml
 expect_reject neg-policy-team-mismatch "must equal the namespace name" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-mismatch.yaml
 expect_reject neg-policy-team-missing "namespaces must carry" "${KY[@]}" --resource ci/fixtures/kyverno/team-label-missing.yaml
+expect_reject neg-policy-system-pool-team "pool system is reserved for platform controllers" "${KY[@]}" --resource ci/fixtures/kyverno/system-pool-team.yaml
+expect_reject neg-policy-system-pool-wildcard "pool system is reserved for platform controllers" "${KY[@]}" --resource ci/fixtures/kyverno/system-pool-wildcard.yaml
 expect_reject neg-karpenter-config-by-hand "denied for kubernetes-admin" "${KY[@]}" -u ci/fixtures/kyverno/userinfo-human.yaml "${KPOL[@]}"
 expect_reject neg-platform-without-requests "require-requests -> resource external-secrets/Deployment/external-secrets" "${KY[@]}" --resource "$W/eso-render.yaml"
 expect_reject neg-chart-sha256 "sha256 mismatch: alloy-$ALLOY_CHART_VERSION" pull alloy https://grafana.github.io/helm-charts "$ALLOY_CHART_VERSION" 0000000000000000000000000000000000000000000000000000000000000000
