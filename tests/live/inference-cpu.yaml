@@ -1,5 +1,5 @@
 # Inference workload of the live runbook: a real model served on CPU by the
-# operator (v0.14.0, gitops/apps/vllm-coldstart-operator.yaml) on pool
+# operator (v0.15.0, gitops/apps/vllm-coldstart-operator.yaml) on pool
 # general. gpu 0 with both cpu and memory set makes the operator serve
 # instead of creating its inert placeholder (since v0.12.0). Not synced by
 # Argo CD: applied by hand in the live session, deleted before destroy, like
