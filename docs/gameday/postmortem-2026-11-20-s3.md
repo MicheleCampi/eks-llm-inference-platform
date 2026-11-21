@@ -10,7 +10,7 @@ Blameless: this document is about systems and decisions, not people. Format:
 | Release | eks v2.3.5, operator v0.13.0 |
 | Incident commander | Michele (operator) |
 | Scribe | AI agent (changed nothing) |
-| Status | action items 1, 2, 4 in code; 3, 5 open |
+| Status | action items 1 to 4 in code; 5 (live re-run) open |
 
 ## Summary
 
@@ -88,7 +88,7 @@ restore.
 |---|---|---|---|
 | 1. Taint the system node group (`CriticalAddonsOnly=true:NoSchedule`, the EKS convention for a dedicated add-on node group) and add the toleration to every platform chart. CI checks every platform workload tolerates the taint and no team or test workload does | prevent | Michele | eks v2.3.6 with operator v0.14.0 (scheduling values) |
 | 2. Pin model pods to Karpenter pools: a node selector in the operator (`platform.michelecampi.dev/pool` or `karpenter.sh/nodepool`), or a Kyverno mutate rule for `inference-*` and `team-*` namespaces. Decide in the PR; the Kyverno rule also covers non-operator workloads | prevent | Michele | covered by item 1 in eks v2.3.6: with pool system tainted and `restrict-system-pool` denying the toleration, the only node a model pod can use without asking is pool general (pool gpu carries the `nvidia.com/gpu` taint) |
-| 3. Topology spread across zones for model replicas, because after S1 both replicas sat in eu-west-1b | prevent | Michele | operator issue |
+| 3. Topology spread across zones for model replicas, because after S1 both replicas sat in eu-west-1b | prevent | Michele | operator v0.15.0 `spec.zoneSpread`; `Required` on the game day model in eks v2.3.7 |
 | 4. A ticket alert when a model's ready replicas drop below spec for 5 minutes (`kube_deployment_status_replicas_available < kube_deployment_spec_replicas`), scoped to inference namespaces | detect | Michele | eks #72, merged |
 | 5. Re-run S3 after items 1 and 2: the replacement must stay Pending and the service must run degraded within SLO | process | Michele | next game day |
 

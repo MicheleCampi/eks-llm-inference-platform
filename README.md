@@ -168,7 +168,9 @@ tag; everything else reconciles from Git.
   node DaemonSets tolerate it by default. A workload without the toleration
   goes to the Karpenter pools. `ci/check-system-pool.py` reads every chart as
   Argo CD deploys it and fails on a platform pod that would leave the pool.
-  Game day #1 found the gap: with Karpenter down, a model replica took a
+  Model replicas spread one per zone (`zoneSpread: Required`, operator
+  v0.15.0, since v2.3.7): after the Spot interruption of game day #1 both had
+  ended in one zone. Game day #1 found the gap: with Karpenter down, a model replica took a
   system node ([postmortem](docs/gameday/postmortem-2026-11-20-s3.md)). Not yet
   applied live.
   Exempt, with
@@ -319,7 +321,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.6                      # the release the cluster runs
+    git checkout v2.3.7                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.5.8 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform

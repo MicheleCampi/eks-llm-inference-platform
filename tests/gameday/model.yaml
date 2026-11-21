@@ -33,6 +33,11 @@ metadata:
 spec:
   model: Qwen/Qwen2.5-0.5B-Instruct
   replicas: 2
+  # One replica per zone, enforced (operator v0.15.0): a replacement stays
+  # Pending until Karpenter launches a node in the zone that lacks one, On-Demand
+  # if Spot is unavailable there. Game day #1 S1 ended with both replicas in
+  # eu-west-1b (postmortem action item 3).
+  zoneSpread: Required
   warmupStrategy: Eager
   image: public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo:v0.11.2@sha256:459b4aa1f3d2fbb603e0f8dadb62d952a18760c087d73fd8c4465fae9b155e8a
   gpu: 0
