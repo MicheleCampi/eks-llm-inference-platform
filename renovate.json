@@ -1,0 +1,230 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "description": "Every pinned version gets an update PR; nothing reaches the cluster until a maintainer merges and tags a release. When an update also needs a SHA-256, a vendored file or a re-measurement, CI fails until that is done: the red check is the work order (docs/runbooks/dependency-updates.md).",
+  "extends": [
+    "config:best-practices",
+    ":timezone(Europe/Rome)",
+    "schedule:weekly"
+  ],
+  "ignorePresets": [
+    ":ignoreModulesAndTests"
+  ],
+  "labels": [
+    "dependencies"
+  ],
+  "minimumReleaseAge": "3 days",
+  "prConcurrentLimit": 6,
+  "ignorePaths": [
+    "experiments/**",
+    "docs/**",
+    "gitops/argocd/upstream/**"
+  ],
+  "argocd": {
+    "managerFilePatterns": [
+      "/^gitops/apps/.+\\.ya?ml$/",
+      "/^gitops/root-app\\.ya?ml$/"
+    ]
+  },
+  "kubernetes": {
+    "managerFilePatterns": [
+      "/^tests/.+\\.ya?ml$/",
+      "/^ci/fixtures/.+\\.ya?ml$/"
+    ]
+  },
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Helm chart external-secrets: pinned again in ci/versions.env next to its SHA-256 (same PR as its Argo CD Application)",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "ESO_CHART_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "external-secrets",
+      "registryUrlTemplate": "https://charts.external-secrets.io"
+    },
+    {
+      "customType": "regex",
+      "description": "Helm chart alloy: pinned again in ci/versions.env next to its SHA-256 (same PR as its Argo CD Application)",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "ALLOY_CHART_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "alloy",
+      "registryUrlTemplate": "https://grafana.github.io/helm-charts"
+    },
+    {
+      "customType": "regex",
+      "description": "Helm chart kube-state-metrics: pinned again in ci/versions.env next to its SHA-256 (same PR as its Argo CD Application)",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "KSM_CHART_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "kube-state-metrics",
+      "registryUrlTemplate": "https://prometheus-community.github.io/helm-charts"
+    },
+    {
+      "customType": "regex",
+      "description": "Helm chart kyverno: pinned again in ci/versions.env next to its SHA-256 (same PR as its Argo CD Application)",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "KYVERNO_CHART_VERSION=(?<currentValue>\\S+)"
+      ],
+      "datasourceTemplate": "helm",
+      "depNameTemplate": "kyverno",
+      "registryUrlTemplate": "https://kyverno.github.io/kyverno/"
+    },
+    {
+      "customType": "regex",
+      "description": "Argo CD release: CRD URLs in ci/versions.env (the install manifest is vendored by hand, SHA-256 checked)",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "argoproj/argo-cd/(?<currentValue>v\\d+\\.\\d+\\.\\d+)/manifests"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "argoproj/argo-cd"
+    },
+    {
+      "customType": "regex",
+      "description": "Kyverno CLI that tests gitops/policies offline",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "kyverno/releases/download/(?<currentValue>v\\d+\\.\\d+\\.\\d+)/"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "kyverno/kyverno"
+    },
+    {
+      "customType": "regex",
+      "description": "Container images pinned by tag and digest in ci/versions.env",
+      "managerFilePatterns": [
+        "/^ci/versions\\.env$/"
+      ],
+      "matchStrings": [
+        "_IMAGE=(?<depName>[^:@\\s]+):(?<currentValue>[^@\\s]+)@(?<currentDigest>sha256:[a-f0-9]{64})"
+      ],
+      "datasourceTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Shared CI tool pins: tag and the commit it must resolve to",
+      "managerFilePatterns": [
+        "/^ci/platform-ci\\.env$/"
+      ],
+      "matchStrings": [
+        "PLATFORM_CI_TAG=(?<currentValue>\\S+)\\s+PLATFORM_CI_COMMIT=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "datasourceTemplate": "git-tags",
+      "depNameTemplate": "https://github.com/MicheleCampi/inference-platform-ci"
+    },
+    {
+      "customType": "regex",
+      "description": "EKS AL2023 AMI release in the Karpenter EC2NodeClasses (the managed node group release_version in modules/eks/main.tf moves with it)",
+      "managerFilePatterns": [
+        "/^gitops/karpenter/.+\\.ya?ml$/"
+      ],
+      "matchStrings": [
+        "alias: al2023@(?<currentValue>v\\d{8})"
+      ],
+      "datasourceTemplate": "github-releases",
+      "depNameTemplate": "awslabs/amazon-eks-ami",
+      "versioningTemplate": "regex:^v(?<major>\\d{8})$"
+    }
+  ],
+  "packageRules": [
+    {
+      "description": "This repo's own release tags move with the release PR, not with Renovate",
+      "matchPackageNames": [
+        "https://github.com/MicheleCampi/eks-llm-inference-platform"
+      ],
+      "enabled": false
+    },
+    {
+      "description": "Charts: the Argo CD Application and ci/versions.env share the dependency name, so they land in one PR",
+      "matchDatasources": [
+        "helm"
+      ],
+      "matchPackageNames": [
+        "external-secrets",
+        "alloy",
+        "kube-state-metrics",
+        "kyverno",
+        "karpenter"
+      ],
+      "prBodyNotes": [
+        "Update the chart SHA-256 in `ci/versions.env` (`helm pull` then `sha256sum`); `validate` fails until it matches."
+      ]
+    },
+    {
+      "description": "Karpenter: the CloudFormation file in ci/karpenter/ is vendored per version",
+      "matchPackageNames": [
+        "karpenter",
+        "public.ecr.aws/karpenter/karpenter"
+      ],
+      "prBodyNotes": [
+        "Re-vendor `ci/karpenter/cloudformation-<version>.yaml` and its SHA-256 in `ci/validate.sh`, then `python3 -I ci/karpenter/extract.py ... --check`."
+      ]
+    },
+    {
+      "description": "Argo CD: re-vendor the install manifest and read the upgrade notes",
+      "matchPackageNames": [
+        "argoproj/argo-cd"
+      ],
+      "prBodyNotes": [
+        "Re-vendor `gitops/argocd/upstream/install-<version>.yaml`, update `ARGOCD_*_SHA256` and the kustomization; read https://argo-cd.readthedocs.io/en/stable/operator-manual/upgrading/overview/ ."
+      ]
+    },
+    {
+      "description": "vLLM: a new engine version invalidates latency numbers; re-measure before citing them",
+      "matchPackageNames": [
+        "docker.io/vllm/vllm-openai-cpu",
+        "vllm/vllm-openai-cpu",
+        "public.ecr.aws/q9t5s3a7/vllm-cpu-release-repo"
+      ],
+      "versioning": "regex:^v(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)(?<compatibility>-x86_64)?$",
+      "groupName": "vLLM CPU image",
+      "prBodyNotes": [
+        "Every latency number in README, evidence and CV states the vLLM version it was measured on: re-run the operator's first-request job and say which numbers still hold."
+      ]
+    },
+    {
+      "description": "AMI: weekly releases; monthly is enough outside security fixes",
+      "matchPackageNames": [
+        "awslabs/amazon-eks-ami"
+      ],
+      "schedule": [
+        "* 0-6 1-7 * 1"
+      ],
+      "prBodyNotes": [
+        "Set `release_version` in `modules/eks/main.tf` to the same release (`aws ssm get-parameter --name /aws/service/eks/optimized-ami/1.36/amazon-linux-2023/x86_64/standard/recommended/release_version`)."
+      ]
+    },
+    {
+      "description": "Majors wait for an explicit go on the dependency dashboard",
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true
+    }
+  ],
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": [
+      "* 0-6 1-7 * 1"
+    ]
+  }
+}
