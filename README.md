@@ -102,7 +102,7 @@ tag; everything else reconciles from Git.
   ignore budgets.
 - **Pools checked in CI.** kubeconform validates every NodePool and
   EC2NodeClass against the CRDs of the Karpenter chart Argo CD deploys
-  (v1.15.1); `ci/check-nodepools.py` enforces what a schema cannot: a cost
+  (v1.15.3); `ci/check-nodepools.py` enforces what a schema cannot: a cost
   cap, bounded node life and drain, budgets, IMDSv2 with hop limit 1, a pinned
   AMI, the cost tag, and that only a tainted pool can launch GPU instances.
   Six negative cases prove each rule rejects. CEL rules of the CRDs run only

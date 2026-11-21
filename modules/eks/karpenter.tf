@@ -1,5 +1,5 @@
-# Karpenter v1.15.1. Controller policies come verbatim from the official
-# CloudFormation (ci/karpenter/cloudformation-v1.15.1.yaml, ci/karpenter/extract.py).
+# Karpenter v1.15.3 (its CloudFormation is byte-identical to v1.15.1). Controller policies come verbatim from the official
+# CloudFormation (ci/karpenter/cloudformation-v1.15.3.yaml, ci/karpenter/extract.py).
 data "aws_partition" "current" {}
 data "aws_region" "current" {}
 data "aws_caller_identity" "current" {}
