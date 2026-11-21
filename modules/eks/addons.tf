@@ -2,7 +2,8 @@
 # HA is the add-on default (schema in ci/schemas/), declared here so a change of
 # default cannot remove it silently: 2 replicas across zones and a PDB, so it
 # survives a node removed by Karpenter consolidation. Requests are starting
-# values, to be checked against usage measured live.
+# values, to be checked against usage measured live. Pinned to pool system,
+# whose taint it tolerates (by default too; declared for the same reason).
 resource "aws_eks_addon" "metrics_server" {
   cluster_name  = aws_eks_cluster.this.name
   addon_name    = "metrics-server"

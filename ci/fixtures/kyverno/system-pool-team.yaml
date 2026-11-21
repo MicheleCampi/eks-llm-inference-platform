@@ -1,0 +1,8 @@
+# Fixture for ci/validate-gitops.sh (policy restrict-system-pool): a team pod
+# that asks for pool system by tolerating its taint. Must be denied.
+apiVersion: v1
+kind: Pod
+metadata: {name: bad-system-pool, namespace: team-demo}
+spec:
+  tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
+  containers: [{name: c, image: "nginx:1.27.3", resources: {requests: {cpu: 10m, memory: 16Mi}}}]

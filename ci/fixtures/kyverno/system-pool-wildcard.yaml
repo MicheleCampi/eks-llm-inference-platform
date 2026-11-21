@@ -1,0 +1,9 @@
+# Fixture for ci/validate-gitops.sh (policy restrict-system-pool): a toleration
+# with no key and operator Exists tolerates every taint. Must be denied, also in
+# inference-test when the pod is not the game day probe.
+apiVersion: v1
+kind: Pod
+metadata: {name: bad-wildcard, namespace: inference-test, labels: {app: not-probe}}
+spec:
+  tolerations: [{operator: Exists}]
+  containers: [{name: c, image: "nginx:1.27.3", resources: {requests: {cpu: 10m, memory: 16Mi}}}]

@@ -24,7 +24,10 @@ spec:
     spec:
       # On the system node group (On-Demand, outside Karpenter): the probe must not
       # share the fate of the Spot nodes it is measuring.
+      # That node group is tainted for platform controllers (modules/eks/main.tf):
+      # policy restrict-system-pool admits this toleration for the probe only.
       nodeSelector: {platform.michelecampi.dev/pool: system}
+      tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
       containers:
         - name: curl
           image: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93

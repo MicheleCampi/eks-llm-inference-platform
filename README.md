@@ -143,7 +143,7 @@ tag; everything else reconciles from Git.
   records them (core `nodeclaim/lifecycle`); NotReady from
   kube-state-metrics, with only the Ready condition shipped. Not yet applied
   live.
-- **Admission policies with Kyverno, enforced.** Six `ValidatingPolicy`
+- **Admission policies with Kyverno, enforced.** Seven `ValidatingPolicy`
   (`policies.kyverno.io/v1`, CEL; the classic `ClusterPolicy` API is deprecated
   in chart 3.10.0) deny images without a version tag or digest, containers
   without CPU and memory requests, and privileged containers, for Pods and
@@ -156,7 +156,21 @@ tag; everything else reconciles from Git.
   `require-pdb` does not see the scale subresource (`kubectl scale`, HPA).
   NodePools and EC2NodeClasses are created or updated only by Argo CD's
   application controller and by Karpenter (`karpenter-config-from-git`,
-  Findings #6); DELETE stays open for the teardown.
+  Findings #6); DELETE stays open for the teardown. Pods outside the platform
+  namespaces may not tolerate the taint of pool system
+  (`restrict-system-pool`, since v2.3.6; the game day probe is the one named
+  exception).
+- **Pool system for the platform only.** The managed node group carries the
+  taint `CriticalAddonsOnly=true:NoSchedule`, the EKS convention for an add-on
+  node group. Every platform workload (Argo CD, Karpenter, ESO, Kyverno and its
+  hook Jobs, Alloy, kube-state-metrics, the operator from v0.14.0,
+  metrics-server) selects pool system and tolerates the taint; CoreDNS and the
+  node DaemonSets tolerate it by default. A workload without the toleration
+  goes to the Karpenter pools. `ci/check-system-pool.py` reads every chart as
+  Argo CD deploys it and fails on a platform pod that would leave the pool.
+  Game day #1 found the gap: with Karpenter down, a model replica took a
+  system node ([postmortem](docs/gameday/postmortem-2026-11-20-s3.md)). Not yet
+  applied live.
   Exempt, with
   the reason in the policy: `kube-system`,
   `kyverno`, and `argocd` (installed from the upstream manifest). The platform
@@ -305,7 +319,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply        # 2 Ready nodes
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.3.5                      # the release the cluster runs
+    git checkout v2.3.6                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.4.14 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform

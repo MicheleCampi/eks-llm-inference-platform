@@ -35,6 +35,9 @@ spec:
           - nodes=[karpenter.sh/capacity-type,node.kubernetes.io/instance-type,topology.kubernetes.io/zone]
         resources:
           requests: {cpu: 10m, memory: 64Mi}
+        # Pool system, tainted CriticalAddonsOnly (modules/eks/main.tf).
+        nodeSelector: {kubernetes.io/os: linux, platform.michelecampi.dev/pool: system}
+        tolerations: [{key: CriticalAddonsOnly, operator: Exists, effect: NoSchedule}]
   destination:
     server: https://kubernetes.default.svc
     namespace: monitoring
