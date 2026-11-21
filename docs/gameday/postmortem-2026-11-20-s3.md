@@ -10,7 +10,7 @@ Blameless: this document is about systems and decisions, not people. Format:
 | Release | eks v2.3.5, operator v0.13.0 |
 | Incident commander | Michele (operator) |
 | Scribe | AI agent (changed nothing) |
-| Status | action items 1 to 4 and 6 in code; 5 (live re-run) open |
+| Status | closed: items 1 to 4 and 6 in code; 5 re-run on 2026-11-21, replacement Pending as designed ([evidence](../evidence/gameday-rerun-2026-11-21.md)) |
 
 ## Summary
 
@@ -90,7 +90,7 @@ restore.
 | 2. Pin model pods to Karpenter pools: a node selector in the operator (`platform.michelecampi.dev/pool` or `karpenter.sh/nodepool`), or a Kyverno mutate rule for `inference-*` and `team-*` namespaces. Decide in the PR; the Kyverno rule also covers non-operator workloads | prevent | Michele | covered by item 1 in eks v2.3.6: with pool system tainted and `restrict-system-pool` denying the toleration, the only node a model pod can use without asking is pool general (pool gpu carries the `nvidia.com/gpu` taint) |
 | 3. Topology spread across zones for model replicas, because after S1 both replicas sat in eu-west-1b | prevent | Michele | operator v0.15.0 `spec.zoneSpread`; `Required` on the game day model in eks v2.3.7 |
 | 4. A ticket alert when a model's ready replicas drop below spec for 5 minutes (`kube_deployment_status_replicas_available < kube_deployment_spec_replicas`), scoped to inference namespaces | detect | Michele | eks #72, merged |
-| 5. Re-run S3 after items 1 and 2: the replacement must stay Pending and the service must run degraded within SLO | process | Michele | next game day |
+| 5. Re-run S3 after items 1 and 2: the replacement must stay Pending and the service must run degraded within SLO | process | Michele | done 2026-11-21: Pending as designed; 1 request lost, window availability 99.32 % ([evidence](../evidence/gameday-rerun-2026-11-21.md)) |
 | 6. Ready must mean warm: the first request to each replacement replica took 17 to 19 s (game day finding 4), 3 of the latency SLI's misses | prevent | Michele | operator v0.16.0: a startup probe sends one 1-token completion before Ready; CI first request after Ready 1.88 s against 14.82 s cold; in eks v2.3.8 |
 
 ## Evidence

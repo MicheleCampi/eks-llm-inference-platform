@@ -1,6 +1,7 @@
 # Game day #1, re-run on v2.3.8: the fixes under the same failures
 
 Written 2026-11-21, before the session. BUDGET A-020 (platform-notes).
+Results: [evidence/gameday-rerun-2026-11-21.md](../evidence/gameday-rerun-2026-11-21.md).
 Same service, SLO, probe and roles as [README.md](README.md); this page
 lists only what changes and the hypotheses to prove or refute.
 
