@@ -27,6 +27,8 @@ spec:
           # Alerts PodCrashLooping and KarpenterControllerUnavailable (game day #1, docs/gameday/).
           - kube_pod_container_status_restarts_total
           - kube_deployment_status_replicas_available
+          # Alert ModelReplicasBelowSpec (game day #1 postmortem, S3).
+          - kube_deployment_spec_replicas
         # Showback: team and cost centre come from the namespace (the quota boundary), not from each pod.
         metricLabelsAllowlist:
           - namespaces=[platform.michelecampi.dev/team,platform.michelecampi.dev/cost-center]

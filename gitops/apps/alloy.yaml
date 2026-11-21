@@ -141,14 +141,14 @@ spec:
                 forward_to = [prometheus.relabel.rightsizing.receiver]
               }
 
-              // Nine series families only (free plan bound); pod-level and pause-container
+              // Ten series families only (free plan bound); pod-level and pause-container
               // cAdvisor series are dropped, and of the node conditions only Ready
               // (alert NodeNotReady) is kept.
               prometheus.relabel "rightsizing" {
                 forward_to = [prometheus.remote_write.grafana_cloud.receiver]
                 rule {
                   source_labels = ["__name__"]
-                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_namespace_labels|kube_node_labels|kube_node_status_condition|kube_pod_container_status_restarts_total|kube_deployment_status_replicas_available"
+                  regex         = "up|container_cpu_usage_seconds_total|container_memory_working_set_bytes|kube_pod_container_resource_requests|kube_namespace_labels|kube_node_labels|kube_node_status_condition|kube_pod_container_status_restarts_total|kube_deployment_status_replicas_available|kube_deployment_spec_replicas"
                   action        = "keep"
                 }
                 rule {

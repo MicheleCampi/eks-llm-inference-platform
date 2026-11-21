@@ -129,7 +129,7 @@ tag; everything else reconciles from Git.
   EKS Pod Identity with a role allowed only that secret. `ci/validate-gitops.sh`
   checks chart pins and SHA-256, manifests against the deployed CRDs, the
   service account, secret name and metrics port wiring, and the Alloy config
-  with Alloy itself, with negative cases. Nine alerts (seven on Karpenter and nodes, two on workloads since v2.3.4) live in
+  with Alloy itself, with negative cases. Ten alerts (seven on Karpenter and nodes, three on workloads since v2.3.6) live in
   `observability/karpenter-rules.yaml`, Prometheus format for promtool and
   Grafana-managed rules alike, with promtool tests, a runbook
   per group (`docs/runbooks/karpenter.md`, `docs/runbooks/workloads.md`) and a dashboard

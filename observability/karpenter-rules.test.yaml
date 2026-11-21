@@ -164,3 +164,47 @@ tests:
         exp_alerts:
           - exp_labels: {severity: ticket, namespace: inference-test, pod: qwen-0-5b-cpu-new, container: vllm}
             exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/workloads.md}
+  # Pool gpu is gated (limit 0, usage 0): 0 >= 0 must not page (game day #1
+  # finding 1). Pool general at its limit still does.
+  - interval: 1m
+    input_series:
+      - series: 'karpenter_nodepools_usage{nodepool="gpu",resource_type="cpu"}'
+        values: '0x20'
+      - series: 'karpenter_nodepools_limit{nodepool="gpu",resource_type="cpu"}'
+        values: '0x20'
+      - series: 'karpenter_nodepools_usage{nodepool="general",resource_type="cpu"}'
+        values: '8x20'
+      - series: 'karpenter_nodepools_limit{nodepool="general",resource_type="cpu"}'
+        values: '8x20'
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: KarpenterNodePoolCpuLimitReached
+        exp_alerts:
+          - exp_labels: {severity: page, nodepool: general}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/karpenter.md}
+  # Game day #1 S3 after the isolation fix: one replica of two lost and not
+  # replaced fires a ticket after 5 min; a 2-minute gap (S1) does not; a
+  # kube-system Deployment is out of scope.
+  - interval: 1m
+    input_series:
+      - series: 'kube_deployment_status_replicas_available{namespace="inference-test",deployment="qwen-0-5b-cpu"}'
+        values: '2x3 1x15'
+      - series: 'kube_deployment_spec_replicas{namespace="inference-test",deployment="qwen-0-5b-cpu"}'
+        values: '2x18'
+      - series: 'kube_deployment_status_replicas_available{namespace="team-demo",deployment="api"}'
+        values: '2x3 1 1 2x13'
+      - series: 'kube_deployment_spec_replicas{namespace="team-demo",deployment="api"}'
+        values: '2x18'
+      - series: 'kube_deployment_status_replicas_available{namespace="kube-system",deployment="coredns"}'
+        values: '0x18'
+      - series: 'kube_deployment_spec_replicas{namespace="kube-system",deployment="coredns"}'
+        values: '2x18'
+    alert_rule_test:
+      - eval_time: 6m
+        alertname: ModelReplicasBelowSpec
+        exp_alerts: []
+      - eval_time: 12m
+        alertname: ModelReplicasBelowSpec
+        exp_alerts:
+          - exp_labels: {severity: ticket, namespace: inference-test, deployment: qwen-0-5b-cpu}
+            exp_annotations: {runbook_url: https://github.com/MicheleCampi/eks-llm-inference-platform/blob/main/docs/runbooks/workloads.md}
