@@ -8,7 +8,7 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) runs under A-022, see [live-a022.md](live-a022.md)).
+  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md)).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
   read-only): the apply role can do what apply and destroy need, and no more.
