@@ -78,6 +78,10 @@ GKE pins its own release in
   v0.11.2 again 3.71 s, 293 requests, 0 failed. v0.34.0 is 1.45 x slower at
   steady state on this CPU; in CI on Granite Rapids (Xeon 6975P) the gap is
   at most ~10 %. First request after Ready on v0.34.0: 5.34 s, already warm.
+  Bisected the next day on the same CPU in plain Docker
+  ([A-023](docs/evidence/bisect-a023-2026-11-22.md)): the step is between
+  v0.19.1 (p50 3.79 s) and v0.20.2 (5.73 s), +51 %, with time to Ready from
+  30 s to 70 s at the same release.
 
 ## Architecture
 
