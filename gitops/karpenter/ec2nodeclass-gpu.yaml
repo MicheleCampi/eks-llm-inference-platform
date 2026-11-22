@@ -14,7 +14,7 @@ spec:
   amiSelectorTerms:
     # Same release as "default": for GPU instance types the al2023 alias
     # resolves to the NVIDIA variant of that release.
-    - alias: al2023@v20261107
+    - alias: al2023@v20261119
   subnetSelectorTerms:
     - tags: {karpenter.sh/discovery: llm-inference}
   securityGroupSelectorTerms:

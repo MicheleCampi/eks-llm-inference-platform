@@ -44,7 +44,7 @@ run "pinned_and_ha" {
 
   assert {
     condition = (aws_eks_node_group.default.ami_type == "AL2023_x86_64_STANDARD"
-    && aws_eks_node_group.default.release_version == "1.36.5-20261107")
+    && aws_eks_node_group.default.release_version == "1.36.5-20261119")
     error_message = "node group image must be pinned to the Karpenter AL2023 release"
   }
 

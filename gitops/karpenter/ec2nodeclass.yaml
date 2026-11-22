@@ -11,9 +11,10 @@ spec:
     ManagedBy: karpenter
     Owner: michele
   amiSelectorTerms:
-    # Pinned: EKS 1.36 AL2023 release 1.36.5-20261107 (ami-0a23e5d9311c4142e in
-    # eu-west-1, SSM read 2026-11-14). @latest would change nodes between applies.
-    - alias: al2023@v20261107
+    # Pinned: EKS 1.36 AL2023 release 1.36.5-20261119 (SSM recommended
+    # release_version in eu-west-1, read 2026-11-22; was 20261107).
+    # @latest would change nodes between applies.
+    - alias: al2023@v20261119
   subnetSelectorTerms:
     - tags: {karpenter.sh/discovery: llm-inference}
   securityGroupSelectorTerms:
