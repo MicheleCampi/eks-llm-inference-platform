@@ -55,6 +55,31 @@ All 160 measured requests answered HTTP 200 (4 runs × 40).
 - **v0.19.1 matches A-023** (3.845 s against 3.785 s, +1.6 %), on a fresh instance.
 - **The same direction shows on AMD EPYC 7763 too**, in the dry run on a GitHub runner (operator run 45062201102, 1 run each, not the result): v0.19.1 4.25 s, v0.20.0 4.97 s (+17 %), Ready 40 s → 201 s. On that runner torch has no oneDNN bf16 path (`mkldnn_bf16: false`), so its matmul says nothing about AMX.
 
+## Mechanism, found after the session (free, GitHub runners)
+
+**What changed in the code.** vLLM PR #36487 ("[CPU] Replace OMP initialization", in v0.20.0, still in v0.34.0) changed two things in `vllm/platforms/cpu.py` and `vllm/utils/ompmultiprocessing.py`:
+
+- the CPU backend now always uses the multiprocess executor; up to v0.19.1, with one worker, the worker ran inside the EngineCore process;
+- it reserves one core for the scheduler process, with the comment "TODO: make scheduler proc sleep when idle".
+
+The auto binding also keeps one logical CPU per physical core.
+
+**Measured on the same runner.** Xeon 6975P (Granite Rapids), 4 vCPUs = 2 physical cores (SMT pairs {0,2} and {1,3}). Operator run 45071752438, 2 runs each, interleaved, same probe:
+
+| | OpenMP CPUs (vLLM log) | steady p50 | vs v0.19.1 |
+|---|---|---|---|
+| v0.19.1 | 2 cores | 1.74 s | |
+| v0.20.0 default | `core ids=[2]`, `reserved_cpus=[3]` | 2.81 s | **+61 %** |
+| v0.20.0 with `VLLM_CPU_NUM_OF_RESERVED_CPU=0` | `core ids=[2, 3]`, `reserved_cpus=[]` | 1.865 s | +7 % |
+
+- **On a 2-core machine, v0.20.0 gives one of the two cores to the scheduler and computes on one thread.** Setting `VLLM_CPU_NUM_OF_RESERVED_CPU=0` takes back almost all of the loss.
+- **With one physical core** (operator run 45069544259, cpuset = cpu0 and its SMT sibling) nothing can be reserved: vLLM logs "Selected CPU core number (1) should be greater than reserved CPU core number (1)". Instead the scheduler process runs on the SMT sibling of the worker:
+  - Granite Rapids: 2.88 s → 3.23 s (+12 %);
+  - Sapphire Rapids (A-023, A-024, the m7i-flex.large case): +51-58 %.
+
+  Why Sapphire Rapids suffers that much more on one core is **not explained yet**.
+- **The longer time to Ready is mostly warmup moved before Ready, not a loss.** The first (warmup) request drops from 21-23 s on v0.19.1 to 3 s on v0.20.0, while Ready goes from 25 s to 55 s.
+
 ## Process notes
 
 - **The first run lost its results.** Instance `i-05e56b5c66a15cd2d` ran from 20:00:04Z to 20:21Z. When an instance terminates, the console output read with `--latest` gets cut. The monitor command then overwrote its file with the short output. The full console (without `--latest`) stopped at 136 s of boot. Only the v0.19.1 numbers came back from that run; they match the re-run:
@@ -93,7 +118,7 @@ Saved by Michele on optim-dev as `~/eks/a024r.txt`.
 
 ## Next steps
 
-1. **Read the v0.19.1 → v0.20.0 changes to the CPU path** (free): release notes and the commits touching `csrc/cpu`, the CPU attention backend, `vllm/platforms/cpu.py`, the CPU worker and model runner, and how linear layers are dispatched on CPU. The 30 s → 70 s Ready jump suggests something at load time too.
+1. **Done after the session:** the mechanism is above (vLLM #36487, the reserved scheduler core). Still open: why one Sapphire Rapids core loses 58 % when Granite Rapids loses 12 %.
 2. **The upstream issue for vllm-project/vllm** (`[Performance]: CPU backend ~1.5x slower decode on Sapphire Rapids since v0.20.0`), with:
    - the A-023 and A-024 tables, the digests and `lscpu`;
    - the reproduction script;
