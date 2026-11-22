@@ -70,6 +70,14 @@ GKE pins its own release in
   apply, first request after Ready 8.35 s, steady p50 5.86 s against 3.81 s
   on v0.11.2; 169 requests, 0 failed, including a rolling update of both
   replicas. The steady-state gap is open (finding 3).
+- 2026-11-22, live #8 ([evidence](docs/evidence/live-a022-2026-11-22.md)):
+  release v2.4.1 came up from Git with all 12 Applications Synced and
+  Healthy (the Kyverno fix works live), every node on AMI 1.36.5-20261119.
+  A/B on one m7i-flex.large Spot node (Intel Xeon Platinum 8488C, Sapphire
+  Rapids), same pod and probe: vLLM CPU v0.11.2 p50 3.69 s, v0.34.0 5.37 s,
+  v0.11.2 again 3.71 s, 293 requests, 0 failed. v0.34.0 is 1.45 x slower at
+  steady state on this CPU; in CI on Granite Rapids (Xeon 6975P) the gap is
+  at most ~10 %. First request after Ready on v0.34.0: 5.34 s, already warm.
 
 ## Architecture
 

@@ -1,5 +1,10 @@
 # Live session A-022: v2.4.1, vLLM v0.11.2 against v0.34.0 on one m7i-flex node
 
+**Done 2026-11-22**: [evidence](../evidence/live-a022-2026-11-22.md). v2.4.1
+fixes A-021 finding 1; on one Xeon 8488C node v0.34.0 is 1.45 x v0.11.2 at
+steady state. `tests/ab/model-v0.11.2.yaml` was removed after the session
+(image not deployable outside the A/B); it is in Git history at ca37c1e.
+
 One bounded session on release **v2.4.1** (Kyverno reports RBAC fix #81, AMI
 1.36.5-20261119, operator v0.17.0). Two goals, nothing else:
 
