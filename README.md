@@ -102,7 +102,7 @@ tag; everything else reconciles from Git.
   ignore budgets.
 - **Pools checked in CI.** kubeconform validates every NodePool and
   EC2NodeClass against the CRDs of the Karpenter chart Argo CD deploys
-  (v1.15.1); `ci/check-nodepools.py` enforces what a schema cannot: a cost
+  (v1.15.3); `ci/check-nodepools.py` enforces what a schema cannot: a cost
   cap, bounded node life and drain, budgets, IMDSv2 with hop limit 1, a pinned
   AMI, the cost tag, and that only a tainted pool can launch GPU instances.
   Six negative cases prove each rule rejects. CEL rules of the CRDs run only
@@ -325,7 +325,7 @@ create the role it assumes), then its ARN is set as a repo variable:
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
     git checkout v2.3.8                      # the release the cluster runs
     kubectl create ns argocd
-    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.5.8 vendored (Dex removed), SHA-256 checked in CI
+    kubectl apply -k gitops/argocd --server-side  # Argo CD v3.6.2 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
     terraform destroy                        # stop the meter

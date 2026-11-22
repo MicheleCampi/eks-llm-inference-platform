@@ -17,6 +17,10 @@ done
 # Downloads from GitHub fail now and then (timeout on #9): 4 tries, 15/30/60 s apart.
 retry() { local n=1 d=15; until "$@"; do [ $n -ge 4 ] && return 1; echo "retry $n/3 in ${d}s: $1 ${2:-}" >&2; sleep $d; n=$((n+1)); d=$((d*2)); done; }
 
+# CRD -> JSON schema for kubeconform, then the repair for kubeconform#295
+# (a CRD field named "properties"): see ci/fix-crd-schema.py.
+crd2schema() { mkdir -p "$W/schemas/$1" && (cd "$W/schemas/$1" && python3 "$CI_BIN/openapi2jsonschema.py" "$2" >/dev/null) && python3 ci/fix-crd-schema.py "$W/schemas/$1"/*.json; }
+
 echo "== pins match what ArgoCD deploys"
 same pin-eso-chart   "$(yq '.spec.source.targetRevision' gitops/apps/external-secrets.yaml)" "$ESO_CHART_VERSION"
 same pin-alloy-chart "$(yq '.spec.source.targetRevision' gitops/apps/alloy.yaml)" "$ALLOY_CHART_VERSION"
@@ -54,7 +58,7 @@ helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n e
 python3 "$W/served.py" secretstores.external-secrets.io externalsecrets.external-secrets.io < "$W/eso-render.yaml" > "$W/crd-eso.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | tee "$W/kyverno-render.yaml" | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
 for g in argoproj.io:argo external-secrets.io:eso policies.kyverno.io:kyv; do
-  mkdir -p "$W/schemas/${g%%:*}" && (cd "$W/schemas/${g%%:*}" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-${g##*:}.yaml" >/dev/null)
+  crd2schema "${g%%:*}" "$W/crd-${g##*:}.yaml"
 done
 KC=(kubeconform -strict -summary -kubernetes-version "$K8S_SCHEMA_VERSION"
     -schema-location "https://raw.githubusercontent.com/yannh/kubernetes-json-schema/$K8S_SCHEMA_COMMIT/{{.NormalizedKubernetesVersion}}-standalone{{.StrictSuffix}}/{{.ResourceKind}}{{.KindSuffix}}.json"
@@ -82,7 +86,7 @@ echo "== Karpenter pools: schema of the pinned CRDs, then the invariants a schem
 python3 "$W/served.py" nodepools.karpenter.sh < "$W/karpenter-render.yaml" > "$W/crd-np.yaml"
 python3 "$W/served.py" ec2nodeclasses.karpenter.k8s.aws < "$W/karpenter-render.yaml" > "$W/crd-nc.yaml"
 for g in karpenter.sh:np karpenter.k8s.aws:nc; do
-  mkdir -p "$W/schemas/${g%%:*}" && (cd "$W/schemas/${g%%:*}" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-${g##*:}.yaml" >/dev/null)
+  crd2schema "${g%%:*}" "$W/crd-${g##*:}.yaml"
 done
 check karpenter-schema "${KC[@]}" gitops/karpenter/*.yaml
 grep -h Summary "$W/karpenter-schema.log" | sed 's/^/  /'
@@ -145,8 +149,8 @@ check iam-boundary "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-iam-bounda
 mkdir -p "$W/neg-iam" && printf 'resource "aws_iam_role" "x" {\n  name = "llm-inference-x"\n}\n' > "$W/neg-iam/main.tf"
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
 # ci/fixtures: deliberately bad manifests for negative cases; ci/karpenter: upstream reference copy. Neither is deployed.
-check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-dirs gitops/argocd/upstream --skip-files ci/karpenter/cloudformation-v1.15.1.yaml .
-# Charts as Argo CD deploys them: app values, no helm test hooks (Argo CD v3.5.8 skips them).
+check trivy-config "${TRIVY[@]}" --skip-dirs ci/fixtures --skip-dirs gitops/argocd/upstream --skip-files ci/karpenter/cloudformation-v1.15.3.yaml .
+# Charts as Argo CD deploys them: app values, no helm test hooks (Argo CD v3.6.2 skips them).
 mkdir -p "$W/charts" "$W/neg-chart"
 yq '.spec.source.helm.valuesObject' gitops/apps/kyverno.yaml > "$W/kyv-values.yaml"
 yq '.spec.source.helm.valuesObject' gitops/apps/karpenter.yaml > "$W/karp-values.yaml"
@@ -154,7 +158,7 @@ helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-
 check karpenter-deployed-render retry sh -c "helm template karpenter oci://public.ecr.aws/karpenter/karpenter --version '$KV' -n kube-system -f '$W/karp-values.yaml' > '$W/charts/karpenter.yaml' 2>/dev/null"
 cp "$W/eso-deployed.yaml" "$W/charts/eso.yaml"; cp "$W/alloy-render.yaml" "$W/charts/alloy.yaml"; cp "$W/ksm-render.yaml" "$W/charts/ksm.yaml"; cp "$W/op-deployed.yaml" "$W/charts/operator.yaml"
 TRIVY_CH=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile ci/trivyignore-charts.yaml)
-check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.5.8.yaml' | sha256sum -c -"
+check argocd-upstream-sha sh -c "echo '$ARGOCD_INSTALL_SHA256  gitops/argocd/upstream/install-v3.6.2.yaml' | sha256sum -c -"
 check argocd-overlay-build sh -c "kustomize build gitops/argocd > '$W/charts/argocd.yaml'"
 # Dex (SSO, unused) stays out of the overlay: no object named argocd-dex-server*
 # and no dex image. The server keeps an optional reference to the
@@ -174,7 +178,7 @@ check root-finalizers "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-fi
 sed -n '1p' "$W/root-finalizers.log" | sed 's/^/  /'
 yq 'del(.spec.ignoreDifferences)' gitops/root-app.yaml > "$W/neg-root.yaml"
 expect_reject neg-root-finalizers "root does not ignore pre-delete-finalizer" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-root-finalizers.py "$W/neg-root.yaml" "$W"/charts/*.yaml
-{ cat gitops/argocd/upstream/install-v3.5.8.yaml; echo "# tampered"; } > "$W/argocd-tampered.yaml"
+{ cat gitops/argocd/upstream/install-v3.6.2.yaml; echo "# tampered"; } > "$W/argocd-tampered.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno --skip-tests > "$W/neg-chart/kyverno.yaml"
 echo "== AppProject platform: every cluster-scoped kind its apps create is whitelisted"
 OPV=$(yq '.spec.source.targetRevision' gitops/apps/vllm-coldstart-operator.yaml)
@@ -188,7 +192,7 @@ check live-workload-complies "${KY[@]}" --resource tests/live/inflate.yaml
 # Argo CD deploys (CRD from its chart at that tag), in a namespace the
 # policies accept. The pod itself is built by the operator, at run time.
 python3 "$W/served.py" vllmservices.inference.michelecampi.dev < "$W/op/chart/crds/crd.yaml" > "$W/crd-vllm.yaml"
-mkdir -p "$W/schemas/inference.michelecampi.dev" && (cd "$W/schemas/inference.michelecampi.dev" && python3 "$CI_BIN/openapi2jsonschema.py" "$W/crd-vllm.yaml" >/dev/null)
+crd2schema inference.michelecampi.dev "$W/crd-vllm.yaml"
 check live-inference-schema "${KC[@]}" tests/live/inference-cpu.yaml
 check live-inference-complies "${KY[@]}" --resource tests/live/inference-cpu.yaml
 check live-imds-probe-complies "${KY[@]}" --resource tests/live/imds-probe.yaml

@@ -11,7 +11,7 @@ locals {
   stack_roles    = "arn:${local.partition}:iam::${local.account}:role/llm-inference-*"
   stack_policies = "arn:${local.partition}:iam::${local.account}:policy/llm-inference-*"
   # The only IAM a stack role may use: Karpenter's instance profile actions
-  # (ci/karpenter/cloudformation-v1.15.1.yaml) and passing the node role to EC2.
+  # (ci/karpenter/cloudformation-v1.15.3.yaml) and passing the node role to EC2.
   karpenter_iam = [
     "iam:AddRoleToInstanceProfile", "iam:CreateInstanceProfile", "iam:DeleteInstanceProfile",
     "iam:GetInstanceProfile", "iam:ListInstanceProfiles", "iam:RemoveRoleFromInstanceProfile",

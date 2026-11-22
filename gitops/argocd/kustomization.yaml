@@ -1,4 +1,4 @@
-# Argo CD install: upstream v3.5.8 manifest vendored in upstream/ (SHA-256
+# Argo CD install: upstream v3.6.2 manifest vendored in upstream/ (SHA-256
 # pinned in ci/versions.env, checked in CI) plus two changes:
 #  - a pod securityContext on the 4 workloads that had none (trivy KSV-0118).
 #    Their containers already run non-root with seccomp RuntimeDefault; this
@@ -17,7 +17,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: argocd
 resources:
-  - upstream/install-v3.5.8.yaml
+  - upstream/install-v3.6.2.yaml
 patches:
   - target: {kind: Deployment}
     patch: |-
