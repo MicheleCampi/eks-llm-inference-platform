@@ -168,7 +168,7 @@ check trivy-charts "${TRIVY_CH[@]}" "$W/charts"
 # Every image the platform runs, from the charts as deployed and the live
 # test workloads (VllmService spec.image included): the input of
 # ci/image-scan.sh. IMAGES_OUT keeps the list for that job.
-yq -N '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' "$W"/charts/*.yaml tests/live/*.yaml tests/gameday/*.yaml | sort -u > "$W/images.txt"
+yq -N '.. | select(tag == "!!map" and has("image")) | .image | select(tag == "!!str")' "$W"/charts/*.yaml tests/live/*.yaml tests/gameday/*.yaml tests/ab/*.yaml | sort -u > "$W/images.txt"
 check images-listed test "$(wc -l < "$W/images.txt")" -ge 8
 sed 's/^/  /' "$W/images.txt"
 [ -n "${IMAGES_OUT:-}" ] && cp "$W/images.txt" "$IMAGES_OUT"
@@ -213,6 +213,19 @@ grep -q 'fail: 0, warn: 0, error: 0' "$W/live-workload-5-replicas.log" || { echo
 check gameday-schema "${KC[@]}" tests/gameday/probe.yaml tests/gameday/model.yaml
 check gameday-probe-complies "${KY[@]}" --resource tests/gameday/probe.yaml
 check gameday-model-complies "${KY[@]}" --resource tests/gameday/model.yaml
+# Live A-022 A/B (docs/runbooks/live-a022.md): both releases, valid for the
+# operator release Argo CD deploys and admitted, with NODE as the runbook
+# replaces it (a node name) and with the nodeName line deleted (first run).
+for f in tests/ab/model-*.yaml; do
+  n=$(basename "$f" .yaml)
+  sed 's/nodeName: NODE/nodeName: ip-10-42-0-1.eu-west-1.compute.internal/' "$f" > "$W/ab-$n-pinned.yaml"
+  grep -v 'nodeName: NODE' "$f" > "$W/ab-$n-free.yaml"
+  check "ab-$n-schema" "${KC[@]}" "$W/ab-$n-pinned.yaml" "$W/ab-$n-free.yaml"
+  # One variant per run: both carry the same Namespace and VllmService, and
+  # the Kyverno CLI's fake client panics on duplicate objects.
+  check "ab-$n-pinned-complies" "${KY[@]}" --resource "$W/ab-$n-pinned.yaml"
+  check "ab-$n-free-complies" "${KY[@]}" --resource "$W/ab-$n-free.yaml"
+done
 check gameday-model-2-replicas "${KY[@]}" --resource ci/fixtures/kyverno/vllm-2-replicas.yaml
 grep -q 'pass: 4, fail: 0, warn: 0, error: 0' "$W/gameday-model-2-replicas.log" || { echo "FAIL gameday-model-2-replicas: require-pdb not evaluated or not passed"; fail=1; }
 sed 's/app: qwen-0-5b-cpu, app.kubernetes/app: other, app.kubernetes/g' ci/fixtures/kyverno/vllm-2-replicas.yaml > "$W/neg-gameday-nopdb.yaml"
