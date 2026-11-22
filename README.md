@@ -62,6 +62,14 @@ GKE pins its own release in
   first (peak 5.0 GiB, 20 out of 20). CPU latency, not a GPU benchmark: GPU
   serving by the same operator was measured on GKE and on a 3x A10 fleet,
   see the operator repo.
+- 2026-11-22, live #7 ([evidence](docs/evidence/live-a021-2026-11-22.md)):
+  release v2.4.0 on current versions (Argo CD 3.6.2, ESO 2.15, Karpenter
+  1.15.3, operator v0.17.0, vLLM CPU v0.34.0) came up from Git, 11 of 12
+  Applications Healthy (Kyverno reports RBAC, fixed in #81). On vLLM v0.34.0
+  in eager mode, same nodes and probe as v0.11.2: Ready 3 min 23 s after the
+  apply, first request after Ready 8.35 s, steady p50 5.86 s against 3.81 s
+  on v0.11.2; 169 requests, 0 failed, including a rolling update of both
+  replicas. The steady-state gap is open (finding 3).
 
 ## Architecture
 
