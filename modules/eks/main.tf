@@ -88,9 +88,9 @@ resource "aws_eks_node_group" "default" {
   subnet_ids      = var.subnet_ids
   instance_types  = var.node_instance_types
   # Pinned image, the same AL2023 release as the Karpenter EC2NodeClass
-  # (SSM recommended/release_version for 1.36, read 2026-11-14).
+  # (SSM recommended/release_version for 1.36, read 2026-11-22).
   ami_type        = "AL2023_x86_64_STANDARD"
-  release_version = "1.36.5-20261107"
+  release_version = "1.36.5-20261119"
 
   # Pool "system": platform controllers (Argo CD, Karpenter itself, ESO,
   # Kyverno, Alloy, the operator) on stable On-Demand capacity that Karpenter
