@@ -10,8 +10,11 @@ vLLM CPU v0.34.0). Two goals, nothing else:
 2. **vLLM v0.34.0 cold start on EKS, same method as the v0.11.2 numbers**:
    image pull time, pod Ready time, first request after Ready, steady p50.
    Baseline on v0.11.2 (re-run of 2026-11-21, v2.3.8): first request after
-   Ready 5.84 s, steady p50 3.81 s. CI on v0.34.0 (operator #99): first
-   request after Ready 5.26 s, cold without the operator 18.22 s.
+   Ready 5.84 s, steady p50 3.81 s. CI on v0.34.0 with operator v0.17.0
+   (probe of 16 tokens, so decode is warmed too), Intel Xeon 6975P with AMX
+   like the m7i-flex nodes: first request after Ready 2.76 s, steady 2.65 s,
+   cold without the operator 18.26 s. On AMD EPYC (AVX2 only) 4.01 s against
+   over 120 s cold.
 
 No chaos scenarios (budget option A). Budget: BUDGET A-021, ceiling
 2.50 EUR, at most 2 h from apply. Steps that are not specific to this
@@ -19,7 +22,7 @@ session are in [live.md](live.md) and referenced by number.
 
 ## 0. Before (nodes off)
 
-- The release tag exists (Michele creates it) and `gitops/root-app.yaml`
+- The release tag v2.4.0 exists (Michele creates it) and `gitops/root-app.yaml`
   points to it. Below, `TAG` is that tag.
 - Prices read again (BUDGET rule 2), one command at a time:
 
@@ -74,7 +77,7 @@ Start the probe right after the phase is Ready:
     kubectl -n inference-test logs deploy/probe -f | head -5
 
 The first lines are the first client requests after Ready. Objective: under
-8 s (CI on v0.34.0: 5.26 s). Then 10 minutes of steady traffic and:
+8 s (CI on v0.34.0, Intel: 2.76 s, at steady state). Then 10 minutes of steady traffic and:
 
     kubectl -n inference-test logs deploy/probe --tail=-1 > probe-a021.jsonl
     python3 scripts/gameday-sli.py probe-a021.jsonl
