@@ -221,7 +221,10 @@ for f in tests/ab/model-*.yaml; do
   sed 's/nodeName: NODE/nodeName: ip-10-42-0-1.eu-west-1.compute.internal/' "$f" > "$W/ab-$n-pinned.yaml"
   grep -v 'nodeName: NODE' "$f" > "$W/ab-$n-free.yaml"
   check "ab-$n-schema" "${KC[@]}" "$W/ab-$n-pinned.yaml" "$W/ab-$n-free.yaml"
-  check "ab-$n-complies" "${KY[@]}" --resource "$W/ab-$n-pinned.yaml" --resource "$W/ab-$n-free.yaml"
+  # One variant per run: both carry the same Namespace and VllmService, and
+  # the Kyverno CLI's fake client panics on duplicate objects.
+  check "ab-$n-pinned-complies" "${KY[@]}" --resource "$W/ab-$n-pinned.yaml"
+  check "ab-$n-free-complies" "${KY[@]}" --resource "$W/ab-$n-free.yaml"
 done
 check gameday-model-2-replicas "${KY[@]}" --resource ci/fixtures/kyverno/vllm-2-replicas.yaml
 grep -q 'pass: 4, fail: 0, warn: 0, error: 0' "$W/gameday-model-2-replicas.log" || { echo "FAIL gameday-model-2-replicas: require-pdb not evaluated or not passed"; fail=1; }
