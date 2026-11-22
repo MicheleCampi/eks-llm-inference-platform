@@ -19,7 +19,7 @@ session are in [live.md](live.md) and referenced by number.
 
 ## 0. Before (nodes off)
 
-- The release tag exists (Michele creates it) and `gitops/root-app.yaml`
+- The release tag v2.4.0 exists (Michele creates it) and `gitops/root-app.yaml`
   points to it. Below, `TAG` is that tag.
 - Prices read again (BUDGET rule 2), one command at a time:
 
