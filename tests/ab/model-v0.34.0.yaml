@@ -1,0 +1,34 @@
+# Live A-022 (docs/runbooks/live-a022.md): A/B of the vLLM CPU release on ONE
+# m7i-flex.large node. A-021 finding 3: steady p50 5.86 s on v0.34.0 against
+# 3.81 s on v0.11.2 (A-020) on m7i-flex nodes; the CI study did not reproduce
+# it (at most ~10 %). Same settings as tests/gameday/model.yaml except: one
+# replica (no PDB needed), the image, and nodeName, which pins the pod to the
+# node the first run landed on, so both releases are measured on the same
+# machine. NODE is replaced at apply time (runbook); the first run deletes
+# the line. Applied by hand, deleted before destroy; the Service name is the
+# one tests/gameday/probe.yaml calls.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference-test
+  labels: {kubernetes.io/metadata.name: inference-test}
+---
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen-0-5b-cpu
+  namespace: inference-test
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 1
+  nodeName: NODE
+  warmupStrategy: Eager
+  image: docker.io/vllm/vllm-openai-cpu:v0.34.0-x86_64@sha256:b14c3a46a4b08852b32528643e070d57f3731cccb0fa33ef86d4f3b3f8ac36c4
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs: ["--max-model-len", "2048", "--dtype", "bfloat16"]
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
