@@ -25,7 +25,18 @@ spec:
         admissionController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
         backgroundController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
         cleanupController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
-        reportsController: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
+        reportsController:
+          podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}
+          # Read access to the CRDs a ValidatingPolicy matches, so the policy is
+          # ready for reporting. Without it karpenter-config-from-git stayed
+          # ready=false (RBACPermissionsGranted False) and Argo CD 3.6 showed
+          # policies Degraded, while admission still denied (A-021, 2026-11-22).
+          # The chart grants get, list, watch only.
+          rbac:
+            clusterRole:
+              extraResources:
+                - {apiGroups: [karpenter.sh], resources: [nodepools]}
+                - {apiGroups: [karpenter.k8s.aws], resources: [ec2nodeclasses]}
         crds: {migration: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}}
         webhooksCleanup: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}
         upgrade: {legacyPolicyCheck: {podSecurityContext: {"runAsNonRoot": true, "seccompProfile": {"type": "RuntimeDefault"}}}}
