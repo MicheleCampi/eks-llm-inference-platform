@@ -28,7 +28,17 @@ echo '{}' > "$HELM_ANON/config.json"
 helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json" command helm "$@"; }
 
 backend_kind() { k get statefulset model >/dev/null 2>&1 && echo vllm || echo sim; }
-pod_targets() { k get pods -l app=model -o jsonpath='{range .items[*]}{.status.podIP}:8000{","}{end}' | sed 's/,$//'; }
+# Ready pods only, never one that is terminating (a rollout restart leaves the
+# old pods listed for a while; run 45284208834 scraped one and timed out).
+pod_targets() {
+  k get pods -l app=model -o json | python3 -c '
+import json, sys
+ps = json.load(sys.stdin)["items"]
+ok = [p["status"]["podIP"] + ":8000" for p in ps
+      if not p["metadata"].get("deletionTimestamp")
+      and any(c["type"] == "Ready" and c["status"] == "True" for c in p["status"].get("conditions", []))]
+print(",".join(sorted(ok)))'
+}
 
 # Empty prefix caches on every replica before each arm.
 reset_backend() {
@@ -40,6 +50,11 @@ reset_backend() {
   else
     k rollout restart deploy/model >/dev/null
     k rollout status deploy/model --timeout=180s | tee -a "$LOG"
+    want=$(k get deploy model -o jsonpath='{.spec.replicas}')
+    for _ in $(seq 1 60); do
+      [ "$(k get pods -l app=model --no-headers | wc -l)" = "$want" ] && break
+      sleep 2
+    done
   fi
 }
 
