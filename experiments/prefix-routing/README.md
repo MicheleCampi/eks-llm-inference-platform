@@ -21,7 +21,7 @@ GitHub-hosted runner (4 CPUs, 16 GiB), zero cloud cost.
 |---|---|
 | Router | llm-d-router **v1.0.0** (latest release, 2026-10-16), chart `llm-d-router-standalone`: EPP plus an Envoy sidecar, selecting pods by label. No Gateway, no InferencePool: standalone mode needs neither. |
 | Backend `sim` | llm-d-inference-sim v1.2.0, **4 replicas**, simulated prefix cache of 4352 tokens each (272 blocks of 16). |
-| Backend `vllm` | vLLM CPU **v0.34.0**, Qwen2.5-0.5B-Instruct at a pinned commit, **2 replicas** on 2 dedicated cores each, prefix caching on, cache cut to the same 4352 tokens (`--num-gpu-blocks-override 272`). |
+| Backend `vllm` | vLLM CPU **v0.34.0**, Qwen2.5-0.5B-Instruct at a pinned commit, **2 replicas** on 2 dedicated cores each, prefix caching on, cache cut to the same 4352 tokens (136 blocks of 32, `--num-gpu-blocks-override`). |
 | Load | `loadgen.py`, in a pod (a port-forward would pin all requests to one pod). |
 
 The cache is cut on purpose. With the default 1 GiB of KV cache one vLLM

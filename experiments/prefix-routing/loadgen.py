@@ -77,6 +77,9 @@ def one_request(url, model, prompt, max_tokens):
         conn.request("POST", "/v1/completions", body, {"Content-Type": "application/json"})
         resp = conn.getresponse()
         code = resp.status
+        if code != 200:
+            err = resp.read(300).decode(errors="replace")
+            return {"code": code, "error": err, "e2e": time.perf_counter() - t0, "ttft": None}
         while True:
             line = resp.readline()
             if not line:
@@ -173,6 +176,9 @@ def main():
         "groups": groups, "prefix_words": a.prefix_words, "question_words": a.question_words,
         "max_tokens": a.max_tokens, "seed": a.seed,
         "hit_rate": round(hits / queries, 4) if queries else None,
+        "failures": dict(__import__("collections").Counter(
+            f'{r["code"]} {r.get("error") or ("no data chunk" if r["ttft"] is None else "")}'.strip()
+            for r in rows if not (r["code"] == 200 and r["ttft"] is not None))),
         "ttft_p50": pct([r["ttft"] for r in ok], 50), "ttft_p90": pct([r["ttft"] for r in ok], 90),
         "ttft_p99": pct([r["ttft"] for r in ok], 99),
         "ttft_mean": round(sum(r["ttft"] for r in ok) / len(ok), 4) if ok else None,

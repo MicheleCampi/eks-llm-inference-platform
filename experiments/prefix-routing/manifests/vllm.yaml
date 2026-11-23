@@ -3,7 +3,8 @@
 # so the two never share a core, and VLLM_CPU_NUM_OF_RESERVED_CPU=0 keeps
 # both cores for the worker (vLLM #69464: on 2 cores the reserved scheduler
 # core costs +61 %).
-# The prefix cache is cut to 272 blocks of 16 tokens (4352 tokens) with
+# The prefix cache is cut to 136 blocks of 32 tokens (4352 tokens; the CPU
+# attention backend of v0.34.0 needs a block size multiple of 32) with
 # --num-gpu-blocks-override, so that a working set of a few long prompts
 # overflows one replica: with 1 GiB of KV cache (VLLM_CPU_KVCACHE_SPACE=1)
 # it would take ~100 distinct 800-token prompts, and hours of CPU prefill.
@@ -44,7 +45,7 @@ spec:
               echo "replica $i bound to cores $VLLM_CPU_OMP_THREADS_BIND"
               exec vllm serve "$MODEL" --revision "$MODEL_REVISION" --tokenizer-revision "$MODEL_REVISION" \
                 --port 8000 --dtype bfloat16 --max-model-len 2048 \
-                --enable-prefix-caching --block-size 16 --num-gpu-blocks-override 272
+                --enable-prefix-caching --block-size 32 --num-gpu-blocks-override 136
           env:
             - {name: MODEL, value: __MODEL__}
             - {name: MODEL_REVISION, value: __MODEL_REVISION__}
