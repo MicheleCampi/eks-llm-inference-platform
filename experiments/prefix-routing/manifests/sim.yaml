@@ -38,8 +38,12 @@ spec:
             - "272"
             - --block-size
             - "16"
+            # 4 running requests of ~830 tokens fit in the 4352-token cache.
+            # With 8 (run 45287556802) the simulator answered 500 "kv cache
+            # does not have sufficient capacity" instead of queueing, as a
+            # real vLLM would: those runs are kept on record, not used.
             - --max-num-seqs
-            - "8"
+            - "4"
             - --max-model-len
             - "4096"
             - --prefill-overhead
