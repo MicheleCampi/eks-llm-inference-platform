@@ -69,7 +69,7 @@ backend)
     sed "s|SIM_IMAGE|$SIM_IMAGE|" manifests/sim.yaml | k apply -f - >/dev/null
     k rollout status deploy/model --timeout=300s | tee -a "$LOG"
   else
-    sed -e "s|MODEL_NAME|$MODEL|" -e "s|MODEL_REV|$MODEL_REVISION|" manifests/vllm.yaml | k apply -f - >/dev/null
+    sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" manifests/vllm.yaml | k apply -f - >/dev/null
     t0=$SECONDS
     until [ "$(k get statefulset model -o jsonpath='{.status.readyReplicas}')" = 2 ]; do
       [ $((SECONDS - t0)) -lt 900 ] || { k logs -l app=model --tail=50 || true; exit 1; }
@@ -139,6 +139,7 @@ EOF
   helm uninstall router -n "$NS" --wait >/dev/null 2>&1 || true
   ;;
 report)
+  ls results/*.jsonl >/dev/null 2>&1 || { echo "no results yet"; exit 0; }
   python3 - results/*.jsonl <<'PY' | tee results/report.md
 import json, sys, statistics as st
 rows = {}
@@ -156,9 +157,9 @@ for (b, arm), ss in sorted(rows.items(), key=lambda kv: (kv[0][0], ["service", "
     hr = ", ".join(f'{s["hit_rate"]:.3f}' for s in ss)
     spread = " / ".join(",".join(str(int(p["success"])) for p in s["per_pod"].values()) for s in ss)
     print(f'| {b} | {arm} | {len(ss)} | {ok}/{tot} | {hr} | {med([s["ttft_p50"] for s in ss]):.3f} | {med([s["ttft_p90"] for s in ss]):.3f} | {med([s["ttft_mean"] for s in ss]):.3f} | {med([s["wall_s"] for s in ss]):.1f} | {spread} |')
-s0 = next(iter(rows.values()))[0] if rows else None
-if s0:
-    print(f'\nWorkload: {s0["groups"]} groups (shared prefixes) of {s0["prefix_words"]} words, {s0["question_words"]}-word unique question, {s0["max_tokens"]} output tokens, seed {s0["seed"]}; capacity {s0["capacity_tokens_per_replica"]} tokens per replica.')
+for b in sorted({b for b, _ in rows}):
+    s0 = next(ss[0] for (bb, _), ss in rows.items() if bb == b)
+    print(f'\n{b}: {s0["replicas"]} replicas, {s0["requests"]} requests per arm at concurrency {s0["concurrency"]}; {s0["groups"]} groups (shared prefixes) of {s0["prefix_words"]} words, {s0["question_words"]}-word unique question, {s0["max_tokens"]} output tokens, seed {s0["seed"]}; capacity {s0["capacity_tokens_per_replica"]} tokens per replica.')
 PY
   ;;
 down)

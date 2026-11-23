@@ -44,8 +44,8 @@ spec:
                 --port 8000 --dtype bfloat16 --max-model-len 2048 \
                 --enable-prefix-caching --block-size 16 --num-gpu-blocks-override 272
           env:
-            - {name: MODEL, value: MODEL_NAME}
-            - {name: MODEL_REVISION, value: MODEL_REV}
+            - {name: MODEL, value: __MODEL__}
+            - {name: MODEL_REVISION, value: __MODEL_REVISION__}
             - {name: HF_HUB_OFFLINE, value: "1"}
             - {name: VLLM_CPU_KVCACHE_SPACE, value: "1"}
             - {name: VLLM_CPU_NUM_OF_RESERVED_CPU, value: "0"}
