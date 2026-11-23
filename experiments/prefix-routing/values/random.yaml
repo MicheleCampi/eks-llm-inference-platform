@@ -1,0 +1,17 @@
+# Control arm: the same EPP and Envoy, picking at random. Any difference
+# from the prefix arm is the scorers; any difference from the Service arm
+# is the extra proxy hop. Same plugin set as llm-d-router
+# test/perf/config/router-configs/random-only-default-parsers.yaml.
+router:
+  epp:
+    pluginsConfigFile: random-plugins.yaml
+    pluginsCustomConfig:
+      random-plugins.yaml: |
+        apiVersion: llm-d.ai/v1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: random-picker
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: random-picker

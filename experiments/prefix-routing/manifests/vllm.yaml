@@ -1,0 +1,66 @@
+# Real vLLM CPU: 2 replicas of Qwen2.5-0.5B on one 4-core kind node. Each
+# replica gets its own 2 cores (ordinal 0: cores 0-1, ordinal 1: cores 2-3),
+# so the two never share a core, and VLLM_CPU_NUM_OF_RESERVED_CPU=0 keeps
+# both cores for the worker (vLLM #69464: on 2 cores the reserved scheduler
+# core costs +61 %).
+# The prefix cache is cut to 272 blocks of 16 tokens (4352 tokens) with
+# --num-gpu-blocks-override, so that a working set of a few long prompts
+# overflows one replica: with 1 GiB of KV cache (VLLM_CPU_KVCACHE_SPACE=1)
+# it would take ~100 distinct 800-token prompts, and hours of CPU prefill.
+# VLLM_SERVER_DEV_MODE=1 exposes POST /reset_prefix_cache, used between arms.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: model
+spec:
+  serviceName: model-headless
+  replicas: 2
+  podManagementPolicy: Parallel
+  selector:
+    matchLabels:
+      app: model
+  template:
+    metadata:
+      labels:
+        app: model
+    spec:
+      containers:
+        - name: vllm
+          image: vllm-cpu-ci:pinned
+          imagePullPolicy: Never
+          command: ["bash", "-c"]
+          args:
+            - |
+              i=${HOSTNAME##*-}
+              export VLLM_CPU_OMP_THREADS_BIND=$([ "$i" = 0 ] && echo 0-1 || echo 2-3)
+              echo "replica $i bound to cores $VLLM_CPU_OMP_THREADS_BIND"
+              exec vllm serve "$MODEL" --revision "$MODEL_REVISION" --tokenizer-revision "$MODEL_REVISION" \
+                --port 8000 --dtype bfloat16 --max-model-len 2048 \
+                --enable-prefix-caching --block-size 16 --num-gpu-blocks-override 272
+          env:
+            - {name: MODEL, value: MODEL_NAME}
+            - {name: MODEL_REVISION, value: MODEL_REV}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: VLLM_CPU_KVCACHE_SPACE, value: "1"}
+            - {name: VLLM_CPU_NUM_OF_RESERVED_CPU, value: "0"}
+            - {name: VLLM_SERVER_DEV_MODE, value: "1"}
+          ports:
+            - {name: http, containerPort: 8000}
+          startupProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: "1", memory: 3Gi}
+            limits: {memory: 5Gi}
+          volumeMounts:
+            - {name: hf, mountPath: /root/.cache/huggingface}
+            - {name: shm, mountPath: /dev/shm}
+      volumes:
+        - name: hf
+          hostPath: {path: /hf-cache, type: Directory}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}

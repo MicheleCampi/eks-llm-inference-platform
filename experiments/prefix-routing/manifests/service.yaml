@@ -1,0 +1,27 @@
+# The Service arm: kube-proxy in front of the same pods. In iptables mode
+# kube-proxy picks a backend at random for each new connection, and the load
+# generator opens one connection per request.
+apiVersion: v1
+kind: Service
+metadata:
+  name: model
+spec:
+  selector:
+    app: model
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-headless
+spec:
+  clusterIP: None
+  selector:
+    app: model
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

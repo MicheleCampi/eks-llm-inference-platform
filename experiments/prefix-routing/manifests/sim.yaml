@@ -1,0 +1,57 @@
+# llm-d-inference-sim v1.2.0 standing in for vLLM: 4 replicas, each with a
+# simulated prefix cache of 272 blocks of 16 tokens (4352 tokens, the size
+# given to the real vLLM replicas). The model name is not a real model, so
+# the simulator uses its own tokenizer and downloads nothing.
+# Prefill time per uncached token is set, so a cache hit shortens the
+# simulated TTFT by construction: the simulator measures where the router
+# sends requests (hit rate, spread), not how fast a real engine is.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model
+spec:
+  replicas: 4
+  selector:
+    matchLabels:
+      app: model
+  template:
+    metadata:
+      labels:
+        app: model
+    spec:
+      containers:
+        - name: sim
+          image: SIM_IMAGE
+          args:
+            - --model
+            - sim-qwen2.5-0.5b
+            - --port
+            - "8000"
+            - --enable-kvcache
+            - --kv-cache-size
+            - "272"
+            - --block-size
+            - "16"
+            - --max-num-seqs
+            - "8"
+            - --max-model-len
+            - "4096"
+            - --prefill-overhead
+            - 5ms
+            - --prefill-time-per-token
+            - 200us
+            - --inter-token-latency
+            - 5ms
+          env:
+            - name: POD_NAME
+              valueFrom: {fieldRef: {fieldPath: metadata.name}}
+            - name: POD_NAMESPACE
+              valueFrom: {fieldRef: {fieldPath: metadata.namespace}}
+          ports:
+            - {name: http, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: 8000}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 512Mi}

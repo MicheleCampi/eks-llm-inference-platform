@@ -1,0 +1,5 @@
+# Prefix arm: the chart's default configuration at v1.0.0, unchanged
+# (queue-scorer 2, kv-cache-utilization-scorer 2, prefix-cache-scorer 3,
+# approximate prefix index with the tokenizer-free estimate backend).
+# Nothing to set: the arm measures what a team gets out of the box.
+router: {}
