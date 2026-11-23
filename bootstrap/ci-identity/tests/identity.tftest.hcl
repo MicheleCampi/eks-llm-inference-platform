@@ -134,3 +134,11 @@ run "apply_reads_only_two_service_linked_roles" {
     error_message = "The apply role may only read (iam:GetRole) the two service-linked roles, by exact ARN."
   }
 }
+
+run "cost_allocation_tags_active" {
+  command = plan
+  assert {
+    condition     = toset([for t in aws_ce_cost_allocation_tag.this : t.tag_key if t.status == "Active"]) == toset(["Project", "Session"])
+    error_message = "Project and Session must be active cost allocation tags, kept outside the cluster stack"
+  }
+}

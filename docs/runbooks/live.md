@@ -8,7 +8,10 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md)).
+  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md); v2.4.2 adds the Session cost allocation tag and has not run live yet).
+- The session's BUDGET id (A-NNN) is the `session` input of apply.yml and
+  destroy.yml: every resource gets the tag `Session` with it, and Cost
+  Explorer groups the cost by it ([cost-allocation.md](cost-allocation.md)).
 - `bash ci/validate.sh` is ALL PASS on the tag.
 - `bash ci/simulate-apply-role.sh` is PREFLIGHT PASS (administrator credentials,
   read-only): the apply role can do what apply and destroy need, and no more.
@@ -26,16 +29,18 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.4.1
+    git checkout v2.4.2
 
-Read this runbook from main: commits after v2.4.1 change documentation only.
+Read this runbook from main: commits after v2.4.2 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.4.1
+    gh workflow run apply.yml --ref v2.4.2 -f session=A-NNN
     gh run watch
 
-Open the run: the plan job summary shows the plan and its sha256. Expected:
+`A-NNN` is the BUDGET entry of this session; the workflow refuses anything
+else, and A-000 (reserved for pull request plans). Open the run: the plan job
+summary shows the session, the plan and its sha256. Expected:
 only creates. Approve in "Review deployments" (environment `live`). The apply
 job re-plans and applies only if the sha256 is the approved one. Then, locally:
 
@@ -45,8 +50,19 @@ job re-plans and applies only if the sha256 is the approved one. Then, locally:
 ## 3. GitOps bootstrap
 
 Follow README "Run it": Argo CD (`kubectl apply -k gitops/argocd
---server-side`), `projects.yaml`, then the root app. Wait until every Argo CD
-application is Synced and Healthy.
+--server-side`), `projects.yaml`, then the root app. Then label the cluster
+with the session, read from the EKS cluster's own `Session` tag:
+
+    scripts/label-session.sh
+
+Expected: `session label: A-NNN`. Without it ApplicationSet `karpenter-nodes`
+generates nothing: no NodePool, so Karpenter launches no node, rather than
+untagged ones. With it, the Application `karpenter-nodes` appears and every
+EC2NodeClass carries `Session`:
+
+    kubectl get ec2nodeclass -o custom-columns=NAME:.metadata.name,SESSION:.spec.tags.Session
+
+Wait until every Argo CD application is Synced and Healthy.
 
     kubectl -n argocd get applications
 
@@ -80,7 +96,7 @@ The token is typed, never pasted in a file or a chat:
 `PROM_URL` is the remote-write URL and `PROM_USER` the instance id of the
 Prometheus data source (Grafana Cloud, stack details).
 
-    gh workflow run observability.yml --ref v2.4.1
+    gh workflow run observability.yml --ref v2.4.2
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -140,7 +156,9 @@ privileged pod rejected by the ValidatingPolicy, same reason as in CI.
 ## 9. Destroy
 
 Root app and karpenter-nodes sync with selfHeal: a deleted NodePool would be
-recreated within seconds. Stop automated sync first, then delete the
+recreated within seconds. Stop automated sync first (ApplicationSet
+`karpenter-nodes` ignores the syncPolicy of the Application it generates, so
+the patch below holds), then delete the
 NodePool: Karpenter drains and terminates its nodes before the cluster goes.
 Then delete the EC2NodeClass: Karpenter owns the instance profile it made for
 the node role, and the apply role may not remove it (live attempt 2).
@@ -153,7 +171,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete ec2nodeclass default gpu   # Karpenter deletes the instance profile it created
     kubectl wait --for=delete ec2nodeclass/default ec2nodeclass/gpu --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.4.1
+    gh workflow run destroy.yml --ref v2.4.2 -f session=A-NNN
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session; the session's access policy (step 4) is deleted.

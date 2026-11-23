@@ -41,6 +41,15 @@ variable "irsa_roles" {
   }
 }
 
+variable "session" {
+  description = "BUDGET entry of the live session (A-NNN), set as the Session cost allocation tag on every resource. apply.yml and destroy.yml take it as a required input; plans on pull requests use A-000, which no session uses."
+  type        = string
+  validation {
+    condition     = can(regex("^A-[0-9]{3}$", var.session))
+    error_message = "session must be a BUDGET entry id such as A-025."
+  }
+}
+
 variable "budget_monthly_limit_usd" {
   description = "Monthly cost budget for spend tagged Project (USD)."
   type        = number

@@ -70,6 +70,8 @@ jobs:
           # TEST-NET-1 (RFC 5737, documentation only, not routable): it passes the
           # variable's validation and keeps the plan diff faithful; a plan applies nothing.
           TF_VAR_public_access_cidrs: '["192.0.2.0/24"]'
+          # A-000: reserved for pull request plans, refused by apply and destroy.
+          TF_VAR_session: A-000
         run: |
           acct=$(aws sts get-caller-identity --query Account --output text)
           echo "::add-mask::$acct"

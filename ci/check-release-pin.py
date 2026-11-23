@@ -1,12 +1,15 @@
 """Every Argo CD Application sourced from this repo deploys the same release
 tag (vX.Y.Z), never a branch: promotion is a reviewed change plus a tag.
+The template of an ApplicationSet counts as an Application.
 Usage: check-release-pin.py REPO_URL FILE..."""
 import re, sys, yaml
 repo, files = sys.argv[1], sys.argv[2:]
 pins = {}
 for f in files:
     for d in yaml.safe_load_all(open(f)):
-        if not (isinstance(d, dict) and d.get("kind") == "Application"):
+        if isinstance(d, dict) and d.get("kind") == "ApplicationSet":
+            d = d["spec"]["template"]
+        elif not (isinstance(d, dict) and d.get("kind") == "Application"):
             continue
         for s in [d["spec"].get("source")] + (d["spec"].get("sources") or []):
             if s and s.get("repoURL") == repo:
