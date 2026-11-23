@@ -29,11 +29,11 @@ variable "alert_emails" {
   }
 }
 
-# Without activation the TagKeyValue filter matches nothing.
-resource "aws_ce_cost_allocation_tag" "project" {
-  tag_key = "Project"
-  status  = "Active"
-}
+# The Project tag must be an active cost allocation tag, or the TagKeyValue
+# filter matches nothing. It is activated in bootstrap/ci-identity, not here:
+# deleting aws_ce_cost_allocation_tag sets the tag Inactive (provider
+# resourceCostAllocationTagDelete), so in this stack every destroy deactivated
+# it until the next apply (found 2026-11-23).
 
 resource "aws_budgets_budget" "this" {
   name         = "${var.name}-monthly"
@@ -58,8 +58,6 @@ resource "aws_budgets_budget" "this" {
       subscriber_email_addresses = var.alert_emails
     }
   }
-
-  depends_on = [aws_ce_cost_allocation_tag.project]
 }
 
 output "budget_name" {

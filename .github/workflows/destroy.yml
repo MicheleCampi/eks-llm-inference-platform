@@ -5,6 +5,11 @@
 name: destroy
 on:
   workflow_dispatch:
+    inputs:
+      session:
+        description: "BUDGET entry of this live session (A-NNN): the Session cost allocation tag of every resource"
+        required: true
+        type: string
 permissions:
   contents: read
 concurrency:
@@ -24,12 +29,18 @@ jobs:
       # A secret, so the runner masks it in every log line of the job from the
       # start, step env headers included (AWS_ROLE_ARN holds the account id).
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      # Session cost allocation tag (providers.tf). Through env, never
+      # interpolated into a script; Terraform validates it too.
+      TF_VAR_session: ${{ inputs.session }}
     outputs:
       changes: ${{ steps.plan.outputs.changes }}
     steps:
       - name: Account id masked from job start (secret AWS_ACCOUNT_ID)
         run: |
           [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "::error::secret AWS_ACCOUNT_ID missing or not 12 digits: AWS_ROLE_ARN would print the account id in the log"; exit 1; }
+      - name: Session is a BUDGET entry (A-NNN; A-000 is reserved for pull request plans)
+        run: |
+          [[ "$TF_VAR_session" =~ ^A-[0-9]{3}$ && "$TF_VAR_session" != "A-000" ]] || { echo "::error::input session must be the BUDGET entry of this session, such as A-025"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -58,7 +69,7 @@ jobs:
           sha=$(terraform show -json tfplan | jq -S '[.resource_changes[] | select(.change.actions != ["no-op"]) | {address, actions: .change.actions, after: .change.after}] | sort_by(.address)' | sha256sum | cut -d' ' -f1)
           echo "changes=$sha" >> "$GITHUB_OUTPUT"
           {
-            echo "## Plan to approve (destroy, ${GITHUB_REF_NAME})"
+            echo "## Plan to approve (destroy, ${GITHUB_REF_NAME}, session ${TF_VAR_session})"
             echo "resource_changes sha256: \`$sha\`"
             echo '```'
             terraform show -no-color tfplan | grep -E '^Plan:|^  # .* will be|must be replaced' || true
@@ -77,10 +88,16 @@ jobs:
       # A secret, so the runner masks it in every log line of the job from the
       # start, step env headers included (AWS_ROLE_ARN holds the account id).
       AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+      # Session cost allocation tag (providers.tf). Through env, never
+      # interpolated into a script; Terraform validates it too.
+      TF_VAR_session: ${{ inputs.session }}
     steps:
       - name: Account id masked from job start (secret AWS_ACCOUNT_ID)
         run: |
           [[ "$AWS_ACCOUNT_ID" =~ ^[0-9]{12}$ ]] || { echo "::error::secret AWS_ACCOUNT_ID missing or not 12 digits: AWS_ROLE_ARN would print the account id in the log"; exit 1; }
+      - name: Session is a BUDGET entry (A-NNN; A-000 is reserved for pull request plans)
+        run: |
+          [[ "$TF_VAR_session" =~ ^A-[0-9]{3}$ && "$TF_VAR_session" != "A-000" ]] || { echo "::error::input session must be the BUDGET entry of this session, such as A-025"; exit 1; }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false

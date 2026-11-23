@@ -26,10 +26,6 @@ run "filtered_on_project_tag" {
     condition     = length(aws_budgets_budget.this.notification) == 2
     error_message = "two alerts expected: actual 80%, forecast 100%"
   }
-  assert {
-    condition     = aws_ce_cost_allocation_tag.project.tag_key == "Project" && aws_ce_cost_allocation_tag.project.status == "Active"
-    error_message = "Project must be an active cost allocation tag"
-  }
 }
 
 run "no_emails_no_alerts" {

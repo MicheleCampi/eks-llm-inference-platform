@@ -17,6 +17,7 @@ mock_provider "aws" {
 
 variables {
   public_access_cidrs = ["203.0.113.0/24"]
+  session             = "A-000"
 }
 
 run "admin_is_cluster_scoped" {

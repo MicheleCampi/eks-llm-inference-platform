@@ -63,7 +63,7 @@ Status: **done** (in the code and checked by CI or proven live),
 | A1.1, A.8.6 (capacity) | Karpenter NodePools with CPU limits as cost caps; GPU pool gated at 0 | `gitops/karpenter/` | CI `ci/check-nodepools.py`; live #3: limit refused a node | done |
 | A1.2, A.8.14 (resilience) | Spot interruptions handled through the real SQS queue; PDBs required for 2 or more replicas; disruption budgets for drift | `gitops/policies/require-pdb.yaml`, `gitops/karpenter/nodepool-general.yaml` | live #3: replacement Ready in 53 s, PDB never below 0 | done |
 | A1.2 (objectives) | SLO and error budget for the served model | `docs/gameday/README.md` section 1 | game day #1 | partial: defined, measured only in the game day |
-| CC3.2, CC9.1 (cost risk) | AWS Budget and cost-allocation tags as code; every live session has a cap approved before apply and a forced destroy deadline | `modules/budget/`, `ci/check-cost-tags.py` | real cost from Cost Explorer per session | done |
+| CC3.2, CC9.1 (cost risk) | AWS Budget and cost-allocation tags as code (Project, and Session = the BUDGET entry, on every resource and Karpenter node); every live session has a cap approved before apply and a forced destroy deadline | `modules/budget/`, `bootstrap/ci-identity/cost-allocation-tags.tf`, `ci/check-cost-tags.py`, `docs/runbooks/cost-allocation.md` | real cost from Cost Explorer per session, grouped by tag Session (from the first session on v2.4.2) | done |
 
 ## Summary and order to close the gaps
 

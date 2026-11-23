@@ -57,7 +57,10 @@ helm template external-secrets "$W/external-secrets-$ESO_CHART_VERSION.tgz" -n e
 { cat "$W/argo-raw.yaml"; echo "---"; cat "$W/argo-proj-raw.yaml"; } | python3 "$W/served.py" applications.argoproj.io appprojects.argoproj.io > "$W/crd-argo.yaml"
 python3 "$W/served.py" secretstores.external-secrets.io externalsecrets.external-secrets.io < "$W/eso-render.yaml" > "$W/crd-eso.yaml"
 helm template kyverno "$W/kyverno-$KYVERNO_CHART_VERSION.tgz" -n kyverno 2>/dev/null | tee "$W/kyverno-render.yaml" | python3 "$W/served.py" validatingpolicies.policies.kyverno.io > "$W/crd-kyv.yaml"
-for g in argoproj.io:argo external-secrets.io:eso policies.kyverno.io:kyv; do
+# ApplicationSet (gitops/apps/karpenter-nodes.yaml): CRD from the vendored
+# Argo CD install, whose SHA-256 is checked below (argocd-upstream-sha).
+python3 "$W/served.py" applicationsets.argoproj.io < gitops/argocd/upstream/install-v3.6.2.yaml > "$W/crd-appset.yaml"
+for g in argoproj.io:argo argoproj.io:appset external-secrets.io:eso policies.kyverno.io:kyv; do
   crd2schema "${g%%:*}" "$W/crd-${g##*:}.yaml"
 done
 KC=(kubeconform -strict -summary -kubernetes-version "$K8S_SCHEMA_VERSION"
@@ -88,9 +91,9 @@ python3 "$W/served.py" ec2nodeclasses.karpenter.k8s.aws < "$W/karpenter-render.y
 for g in karpenter.sh:np karpenter.k8s.aws:nc; do
   crd2schema "${g%%:*}" "$W/crd-${g##*:}.yaml"
 done
-check karpenter-schema "${KC[@]}" gitops/karpenter/*.yaml
+check karpenter-schema "${KC[@]}" gitops/karpenter/ec2nodeclass*.yaml gitops/karpenter/nodepool*.yaml
 grep -h Summary "$W/karpenter-schema.log" | sed 's/^/  /'
-check nodepools "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/*.yaml
+check nodepools "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-nodepools.py gitops/karpenter/ec2nodeclass*.yaml gitops/karpenter/nodepool*.yaml
 sed -n '$p' "$W/nodepools.log" | sed 's/^/  /'
 
 echo "== alloy: chart renders with our values; configuration validated by alloy"
@@ -144,7 +147,28 @@ sed -n 1p "$W/addon-config.log" | sed 's/^/  /'
 echo "== tenancy: each team confined to its namespace, capped by a platform-owned quota"
 check tenancy "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-tenancy.py .
 sed -n '$p' "$W/tenancy.log" | sed 's/^/  /'
-check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py gitops/karpenter/ec2nodeclass.yaml
+check cost-tags "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py gitops/apps/karpenter-nodes.yaml gitops/karpenter/kustomization.yaml gitops/karpenter/ec2nodeclass*.yaml
+sed -n '$p' "$W/cost-tags.log" | sed 's/^/  /'
+# The same patch, rendered by kustomize as Argo CD renders the generated
+# Application (label value A-999): every EC2NodeClass gets Session.
+mkdir -p "$W/karpenter-ov"
+"${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" - "$W/karpenter-ov" > "$W/karpenter-ov/kustomization.yaml" <<'PY'
+import os, sys, yaml
+a = yaml.safe_load(open("gitops/apps/karpenter-nodes.yaml"))
+src = a["spec"]["template"]["spec"]["source"]
+label = '{{ index .metadata.labels "platform.michelecampi.dev/session" }}'
+patches = [{"target": p["target"], "patch": p["patch"].replace(label, "A-999")} for p in src["kustomize"]["patches"]]
+print(yaml.safe_dump({"apiVersion": "kustomize.config.k8s.io/v1beta1", "kind": "Kustomization",
+    "resources": [os.path.relpath(src["path"], sys.argv[1])], "patches": patches}))
+PY
+session_render() {
+  kustomize build --load-restrictor LoadRestrictionsNone "$W/karpenter-ov" > "$W/karpenter-session.yaml" || return 1
+  local got want
+  got=$(yq 'select(.kind == "EC2NodeClass") | .spec.tags.Session' "$W/karpenter-session.yaml" | grep -cx A-999)
+  want=$(ls gitops/karpenter/ec2nodeclass*.yaml | wc -l)
+  [ "$got" = "$want" ] || { echo "Session on $got of $want EC2NodeClasses after kustomize"; return 1; }
+}
+check karpenter-session-render session_render
 check iam-boundary "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-iam-boundary.py modules
 mkdir -p "$W/neg-iam" && printf 'resource "aws_iam_role" "x" {\n  name = "llm-inference-x"\n}\n' > "$W/neg-iam/main.tf"
 TRIVY=("${CI_BIN:-$PWD/.ci-bin}/trivy" config -q --cache-dir "$W/trivy-cache" --skip-check-update --severity HIGH,CRITICAL --exit-code 1 --ignorefile .trivyignore)
@@ -283,7 +307,11 @@ expect_reject neg-nodeclass-imdsv1 "EC2NodeClass gpu: IMDSv2 must be required" "
 mutate 's/terminationGracePeriod: 1h/terminationGracePeriodz: 1h/' gitops/karpenter/nodepool-general.yaml "$W/neg-np-field.yaml" neg-nodepool-unknown-field
 expect_reject neg-nodepool-unknown-field "terminationGracePeriodz" "${KC[@]}" "$W/neg-np-field.yaml"
 grep -v '    Project:' gitops/karpenter/ec2nodeclass.yaml > "$W/neg-nodeclass.yaml"
-expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-nodeclass.yaml"
+expect_reject neg-nodeclass-no-cost-tag "tag Project is None" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py gitops/apps/karpenter-nodes.yaml gitops/karpenter/kustomization.yaml "$W/neg-nodeclass.yaml"
+yq 'del(.spec.template.spec.source.kustomize)' gitops/apps/karpenter-nodes.yaml > "$W/neg-appset-nopatch.yaml"
+expect_reject neg-nodes-no-session-patch "no kustomize patch on EC2NodeClass" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-appset-nopatch.yaml" gitops/karpenter/kustomization.yaml gitops/karpenter/ec2nodeclass*.yaml
+yq 'del(.spec.generators[0].clusters.selector)' gitops/apps/karpenter-nodes.yaml > "$W/neg-appset-open.yaml"
+expect_reject neg-nodes-not-fail-closed "must select clusters labelled" "${CI_BIN:-$PWD/.ci-bin}/venv/bin/python" ci/check-cost-tags.py "$W/neg-appset-open.yaml" gitops/karpenter/kustomization.yaml gitops/karpenter/ec2nodeclass*.yaml
 sed 's/^  description: Team namespaces/  descriptionTypo: Team namespaces/' gitops/apps/projects.yaml > "$W/neg-project.yaml"
 expect_reject neg-appproject-unknown-field "descriptionTypo" "${KC[@]}" "$W/neg-project.yaml"
 rm -rf "$W/neg-ten" && mkdir -p "$W/neg-ten" && cp -r gitops "$W/neg-ten/"

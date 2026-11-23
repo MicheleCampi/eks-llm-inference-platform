@@ -1,17 +1,54 @@
+# Karpenter NodePools and EC2NodeClasses, with the Session cost allocation tag
+# of the live session on every node, volume and ENI Karpenter launches.
+#
+# Session changes at every live session (the BUDGET entry, A-NNN) and Git
+# cannot hold it. Terraform already tags its own resources with it
+# (providers.tf, from the required input of apply.yml); the nodes get it from
+# the Argo CD cluster secret of this cluster, labelled with the same value by
+# scripts/label-session.sh, which reads it from the EKS cluster's own tag.
+# This is Argo CD's standard way to give one cluster its own values: a
+# cluster generator, labels on the cluster secret.
+#
+# Fail closed: without the labelled secret the generator matches no cluster,
+# no Application is generated and no NodePool exists, so Karpenter launches
+# nothing untagged. ci/check-cost-tags.py checks the patch.
 apiVersion: argoproj.io/v1alpha1
-kind: Application
+kind: ApplicationSet
 metadata:
   name: karpenter-nodes
   namespace: argocd
 spec:
-  project: platform
-  source:
-    repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-    targetRevision: v2.4.1
-    path: gitops/karpenter
-  destination:
-    server: https://kubernetes.default.svc
-    namespace: kube-system  # resources are cluster-scoped; project platform allows only listed namespaces
-  syncPolicy:
-    automated: {prune: true, selfHeal: true}
-    syncOptions: [SkipDryRunOnMissingResource=true]
+  goTemplate: true
+  goTemplateOptions: ["missingkey=error"]
+  generators:
+    - clusters:
+        selector:
+          matchExpressions:
+            - {key: platform.michelecampi.dev/session, operator: Exists}
+  # The teardown (docs/runbooks/live.md step 9) turns automated sync off on the
+  # generated Application before deleting the NodePools; the ApplicationSet
+  # must not turn it back on.
+  ignoreApplicationDifferences:
+    - jsonPointers: [/spec/syncPolicy]
+  template:
+    metadata:
+      name: karpenter-nodes
+    spec:
+      project: platform
+      source:
+        repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
+        targetRevision: v2.4.2
+        path: gitops/karpenter
+        kustomize:
+          patches:
+            - target: {group: karpenter.k8s.aws, kind: EC2NodeClass}
+              patch: |-
+                - op: add
+                  path: /spec/tags/Session
+                  value: '{{ index .metadata.labels "platform.michelecampi.dev/session" }}'
+      destination:
+        server: https://kubernetes.default.svc
+        namespace: kube-system  # resources are cluster-scoped; project platform allows only listed namespaces
+      syncPolicy:
+        automated: {prune: true, selfHeal: true}
+        syncOptions: [SkipDryRunOnMissingResource=true]
