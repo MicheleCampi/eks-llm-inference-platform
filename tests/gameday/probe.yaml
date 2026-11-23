@@ -1,9 +1,16 @@
 # Game day #1 (docs/gameday/README.md, section 3): the SLI measured from the
 # user's side. One 32-token completion every 2 s through the Service the
 # operator creates; one JSON line per request on stdout:
-#   {"t":"<UTC>","code":<HTTP code, 0 if no answer>,"s":<seconds>}
+#   {"t":"<UTC>","code":<HTTP code, 0 if no answer>,"s":<seconds>,"tries":<1|2>,"first":<code of try 1>}
 # The client label is the one the operator's NetworkPolicy admits.
 # A request with no answer is curl's code 000, written as 0 (valid JSON).
+# Retry (game day re-run 21/11, finding 2): once, and only when the first try
+# never connected (curl exit 7, or exit 28 with no connection made): the
+# server never saw the request, so a retry cannot run a completion twice. A
+# timeout after the connection is not retried (the server may be generating).
+# Connect timeout 2 s, so a dead endpoint costs 2 s, not the 30 s of
+# 19:36:13. "first" keeps what the server side did: scripts/gameday-sli.py
+# reports the user's availability and the first-try one.
 # $$( is the Kubernetes escape for a literal $( in args.
 # Applied by hand after the model is Ready, deleted before destroy, like
 # tests/live/inflate.yaml. Logs: kubectl -n inference-test logs deploy/probe --tail=-1
@@ -34,15 +41,21 @@ spec:
           command: ["sh", "-c"]
           args:
             - >-
-              while true; do
-              t=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
-              r=$$(curl -s -o /dev/null -m 30 -w '%{http_code} %{time_total}'
+              req() { curl -s -o /dev/null --connect-timeout 2 -m 30 -w '%{http_code} %{time_total} %{time_connect}'
               http://qwen-0-5b-cpu:8000/v1/completions
               -H 'Content-Type: application/json'
-              -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Kubernetes is","max_tokens":32}');
+              -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Kubernetes is","max_tokens":32}'; };
+              while true; do
+              t=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
+              r=$$(req); e=$$?;
               set -- $r;
-              c=$$((${1:-0} + 0));
-              echo "{\"t\":\"$t\",\"code\":$c,\"s\":${2:-30}}";
+              f=$$((${1:-0} + 0)); c=$f; s=${2:-30}; n=1;
+              if [ $e -eq 7 ] || { [ $e -eq 28 ] && [ "${3:-0}" = "0.000000" ]; }; then
+              r=$$(req);
+              set -- $r;
+              c=$$((${1:-0} + 0)); s=$$(awk "BEGIN{print $s + ${2:-30}}"); n=2;
+              fi;
+              echo "{\"t\":\"$t\",\"code\":$c,\"s\":$s,\"tries\":$n,\"first\":$f}";
               sleep 2;
               done
           resources:

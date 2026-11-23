@@ -2,8 +2,11 @@
 """SLIs of a game day scenario from the probe log (tests/gameday/probe.yaml).
 
 Usage: gameday-sli.py LOG [--from UTC] [--to UTC] [--interval 2]
-Reads one JSON object per line ({"t","code","s"}); other lines are skipped
-and counted. Prints the availability SLI (HTTP 200), the latency SLI
+Reads one JSON object per line ({"t","code","s"}, and since the retry of
+the probe "tries" and "first", the code of the first try); other lines are
+skipped and counted. The SLIs are the user's: a request that succeeded on
+its retry counts as answered. The first-try availability (what the servers
+did without the client's retry) is printed next to it when the log has it. Prints the availability SLI (HTTP 200), the latency SLI
 (200 within 8 s) and the share of the 30-day error budget each consumed,
 against the SLO of docs/gameday/README.md section 1: availability 99.5 %,
 latency 95 %. The month's request count is taken as one probe every
@@ -17,7 +20,7 @@ MONTH_S = 30 * 86400
 
 
 def sli(lines, start=None, end=None, interval=2.0):
-    total = ok = fast = skipped = 0
+    total = ok = fast = skipped = retried = first_ok = with_first = 0
     first = last = None
     for line in lines:
         try:
@@ -29,6 +32,10 @@ def sli(lines, start=None, end=None, interval=2.0):
         if (start and t < start) or (end and t > end):
             continue
         total += 1
+        if "first" in r:
+            with_first += 1
+            first_ok += int(r["first"]) == 200
+            retried += int(r.get("tries", 1)) > 1
         first = first or t
         last = t
         if code == 200:
@@ -48,6 +55,8 @@ def sli(lines, start=None, end=None, interval=2.0):
         "avail_budget_used_pct": 100 * (total - ok) / ((1 - AVAIL_OBJ) * month),
         "latency_budget_used_pct": 100 * (total - fast) / ((1 - LAT_OBJ) * month),
         "skipped_lines": skipped,
+        "retried": retried,
+        "first_try_availability": first_ok / with_first if with_first else None,
     }
 
 
@@ -64,6 +73,8 @@ def main():
     print(f"requests           {r['requests']} (failed {r['failed']}, slow or failed {r['slow_or_failed']}, skipped lines {r['skipped_lines']})")
     print(f"availability SLI   {100 * r['availability']:.3f} % (objective {100 * AVAIL_OBJ} %) {'MET' if r['availability'] >= AVAIL_OBJ else 'MISSED'}")
     print(f"latency SLI        {100 * r['latency']:.3f} % within {LAT_S:g} s (objective {100 * LAT_OBJ:g} %) {'MET' if r['latency'] >= LAT_OBJ else 'MISSED'}")
+    if r["first_try_availability"] is not None:
+        print(f"first try          {100 * r['first_try_availability']:.3f} % answered without the retry ({r['retried']} retried)")
     print(f"30-day budget used availability {r['avail_budget_used_pct']:.3f} %, latency {r['latency_budget_used_pct']:.3f} %")
 
 
