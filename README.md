@@ -82,6 +82,15 @@ GKE pins its own release in
   ([A-023](docs/evidence/bisect-a023-2026-11-22.md)): the step is between
   v0.19.1 (p50 3.79 s) and v0.20.2 (5.73 s), +51 %, with time to Ready from
   30 s to 70 s at the same release.
+  Then [A-024](docs/evidence/a024-torch-vs-vllm-2026-11-22.md) ruled
+  torch out: v0.20.0 is already slow (p50 6.07 s against 3.85 s), while a
+  torch-only bf16 linear at decode shapes costs the same with the torch of
+  v0.19.1 (2.10) and of v0.20.0 (2.11), on the same AMX kernel. The step is in
+  vLLM's own v0.20.0 code.
+  Cause, measured on 2-core runners: since v0.20.0 (vLLM #36487) the CPU
+  backend reserves a core for the scheduler process, so on small machines
+  decode runs on half the cores; `VLLM_CPU_NUM_OF_RESERVED_CPU=0` takes back
+  most of it (+61 % to +7 %).
 
 ## Architecture
 
