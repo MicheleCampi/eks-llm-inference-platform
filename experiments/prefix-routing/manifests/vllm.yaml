@@ -30,10 +30,12 @@ spec:
         - name: vllm
           image: vllm-cpu-ci:pinned
           imagePullPolicy: Never
-          # Root, as the image runs; no privilege escalation. Capabilities
-          # are kept: vLLM CPU binds its threads to cores (libnuma).
+          # Root, as the image runs; no privilege escalation; read-only root
+          # filesystem, with every cache vLLM writes moved to /tmp (emptyDir).
+          # Capabilities are kept: vLLM CPU binds its threads to cores (libnuma).
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
           command: ["bash", "-c"]
           args:
             - |
@@ -50,6 +52,9 @@ spec:
             - {name: VLLM_CPU_KVCACHE_SPACE, value: "1"}
             - {name: VLLM_CPU_NUM_OF_RESERVED_CPU, value: "0"}
             - {name: VLLM_SERVER_DEV_MODE, value: "1"}
+            - {name: VLLM_CACHE_ROOT, value: /tmp/vllm}
+            - {name: TRITON_CACHE_DIR, value: /tmp/triton}
+            - {name: XDG_CONFIG_HOME, value: /tmp/config}
           ports:
             - {name: http, containerPort: 8000}
           startupProbe:
@@ -65,8 +70,11 @@ spec:
           volumeMounts:
             - {name: hf, mountPath: /root/.cache/huggingface}
             - {name: shm, mountPath: /dev/shm}
+            - {name: tmp, mountPath: /tmp}
       volumes:
         - name: hf
           hostPath: {path: /hf-cache, type: Directory}
         - name: shm
           emptyDir: {medium: Memory, sizeLimit: 1Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 2Gi}
