@@ -24,10 +24,16 @@ spec:
       labels:
         app: model
     spec:
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: vllm
           image: vllm-cpu-ci:pinned
           imagePullPolicy: Never
+          # Root, as the image runs; no privilege escalation. Capabilities
+          # are kept: vLLM CPU binds its threads to cores (libnuma).
+          securityContext:
+            allowPrivilegeEscalation: false
           command: ["bash", "-c"]
           args:
             - |

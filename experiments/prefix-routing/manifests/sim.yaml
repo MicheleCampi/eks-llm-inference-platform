@@ -19,9 +19,14 @@ spec:
       labels:
         app: model
     spec:
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
       containers:
         - name: sim
           image: SIM_IMAGE
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities: {drop: [ALL]}
           args:
             - --model
             - sim-qwen2.5-0.5b
