@@ -433,6 +433,12 @@ Known and accepted for this project; each would be closed before production.
   Ready 48 s and p50 about 2.2 s in both; operator control plane about 20
   times smaller, NetworkPolicy by default), and when Kueue is worth it:
   [ADR 0002](docs/adr/0002-own-operator-or-kserve.md).
+- Prefix-aware routing, measured on kind in CI at zero cost: llm-d-router
+  v1.0.0 with its default configuration, in front of 2 vLLM CPU v0.34.0
+  replicas, against a plain Service on the same pods and load. Prefix-cache
+  hit rate 0.81 against 0.54, TTFT p50 0.36 s against 0.58-0.92 s, in two
+  runs; 2.1x the hit rate with 4 simulated replicas
+  ([evidence](docs/evidence/prefix-routing-2026-11-23.md)).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
   (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since v2.3.5) and their standard fixes. A map, not a certification.
