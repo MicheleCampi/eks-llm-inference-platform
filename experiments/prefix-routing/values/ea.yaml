@@ -1,0 +1,50 @@
+# Scorer-parity arm "ea": the plugin set of llm-d-router
+# test/perf/config/router-configs/endpoint-attribute-parity.yaml at
+# ROUTER_MAIN_COMMIT. queue-scorer and kv-cache-utilization-scorer are
+# replaced by endpoint-attribute-scorer instances reading WaitingQueueSize
+# and KVCacheUsagePercent; everything else matches the "legacy" arm.
+# Protocol: PARITY.md.
+router:
+  epp:
+    flags:
+      allow-experimental-plugins: "true"
+    pluginsConfigFile: ea-plugins.yaml
+    pluginsCustomConfig:
+      ea-plugins.yaml: |
+        apiVersion: llm-d.ai/v1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: endpoint-attribute-scorer
+          name: ea-queue-scorer
+          parameters:
+            attributeKey: WaitingQueueSize
+            algorithm:
+              type: linear_lower_is_better
+              normalization:
+                adaptiveRange: {}
+        - type: endpoint-attribute-scorer
+          name: ea-kv-cache-scorer
+          parameters:
+            attributeKey: KVCacheUsagePercent
+            algorithm:
+              type: linear_lower_is_better
+              normalization:
+                fixedRange:
+                  min: 0.0
+                  max: 1.0
+        - type: approx-prefix-cache-producer
+          parameters:
+            maxPrefixTokensToMatch: 100000
+        - type: prefix-cache-scorer
+        - type: no-hit-lru-scorer
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: ea-queue-scorer
+            weight: 2
+          - pluginRef: ea-kv-cache-scorer
+            weight: 2
+          - pluginRef: prefix-cache-scorer
+            weight: 3
+          - pluginRef: no-hit-lru-scorer
+            weight: 2

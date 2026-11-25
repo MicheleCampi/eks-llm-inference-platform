@@ -1,0 +1,147 @@
+name: scorer-parity
+
+# llm-d-router #2059: legacy scorers against endpoint-attribute-scorer, with
+# the EPP and chart of llm-d-router main, on kind, on a GitHub-hosted runner:
+# zero cloud cost. Protocol and hypotheses in
+# experiments/prefix-routing/PARITY.md. Runs when the protocol or its values
+# change and on demand; it measures, it does not gate.
+
+on:
+  pull_request:
+    paths:
+      - experiments/prefix-routing/PARITY.md
+      - experiments/prefix-routing/values/legacy.yaml
+      - experiments/prefix-routing/values/ea.yaml
+      - .github/workflows/scorer-parity.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: scorer-parity-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  run:
+    name: ${{ matrix.backend }} (legacy, ea)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [sim, vllm]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+          "$PWD/.ci-bin/helm" version --short; kind version; kubectl version --client | head -1
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        if: matrix.backend == 'vllm'
+        run: |
+          . experiments/prefix-routing/versions.env
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+          df -h / | tail -1
+
+      - name: Restore the model from the Actions cache
+        if: matrix.backend == 'vllm'
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: matrix.backend == 'vllm' && steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          . experiments/prefix-routing/versions.env
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: Check out llm-d-router at the pinned main commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: llm-d/llm-d-router
+          ref: ${{ env.ROUTER_MAIN_COMMIT }}
+          path: llm-d-router
+          persist-credentials: false
+
+      - name: Build the EPP from that commit, and the chart dependencies
+        run: |
+          echo "ROUTER_SRC=$GITHUB_WORKSPACE/llm-d-router" >> "$GITHUB_ENV"
+          docker build -q -f llm-d-router/Dockerfile.epp \
+            --build-arg COMMIT_SHA="$ROUTER_MAIN_COMMIT" -t "$ROUTER_MAIN_EPP_IMAGE" llm-d-router
+          helm dependency update llm-d-router/config/charts/llm-d-router-standalone
+
+      - name: kind cluster
+        run: HF_CACHE=$HOME/hf-cache bash experiments/prefix-routing/run.sh up
+
+      - name: Load the images into the node
+        run: |
+          kind load docker-image "$ROUTER_MAIN_EPP_IMAGE" --name prefix-routing
+          if [ "${{ matrix.backend }}" = vllm ]; then kind load docker-image vllm-cpu-ci:pinned --name prefix-routing; fi
+
+      - name: Model servers
+        run: bash experiments/prefix-routing/run.sh backend ${{ matrix.backend }}
+
+      # Four repetitions per arm, the order alternated each time, so a drift
+      # of the runner during the job does not favour one arm.
+      - name: Repetition 1 (legacy, ea)
+        run: for a in legacy ea; do bash experiments/prefix-routing/run.sh arm $a 1; done
+      - name: Repetition 2 (ea, legacy)
+        run: for a in ea legacy; do bash experiments/prefix-routing/run.sh arm $a 2; done
+      - name: Repetition 3 (legacy, ea)
+        run: for a in legacy ea; do bash experiments/prefix-routing/run.sh arm $a 3; done
+      - name: Repetition 4 (ea, legacy)
+        run: for a in ea legacy; do bash experiments/prefix-routing/run.sh arm $a 4; done
+
+      - name: Report
+        if: always()
+        run: |
+          bash experiments/prefix-routing/run.sh report || true
+          cat experiments/prefix-routing/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s -n bench"
+          $k get pods,svc,deploy,sts -o wide || true
+          $k describe pods || true
+          $k logs -l app=model --tail=80 || true
+          $k logs deploy/router-epp --all-containers --tail=80 || true
+          $k get events --sort-by=.lastTimestamp || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: scorer-parity-${{ matrix.backend }}
+          path: |
+            experiments/prefix-routing/results/*.jsonl
+            experiments/prefix-routing/results/*.log
+            experiments/prefix-routing/results/report.md
+          if-no-files-found: ignore
