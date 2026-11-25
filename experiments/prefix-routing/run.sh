@@ -86,14 +86,14 @@ backend)
     sed "s|SIM_IMAGE|$SIM_IMAGE|" manifests/sim.yaml | k apply -f - >/dev/null
     k rollout status deploy/model --timeout=300s | tee -a "$LOG"
   else
-    sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" manifests/vllm.yaml | k apply -f - >/dev/null
+    sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" -e "s|__KEEPALIVE__|${VLLM_KEEPALIVE:-5}|" manifests/vllm.yaml | k apply -f - >/dev/null
     t0=$SECONDS
     until [ "$(k get statefulset model -o jsonpath='{.status.readyReplicas}')" = 2 ]; do
       [ $((SECONDS - t0)) -lt 900 ] || { k logs -l app=model --tail=50 || true; exit 1; }
       echo "$((SECONDS - t0)) s: $(k get pods -l app=model --no-headers | awk '{print $1" "$2" "$3}' | paste -sd' ')"
       sleep 15
     done
-    say "vllm: 2 replicas Ready after $((SECONDS - t0)) s"
+    say "vllm: 2 replicas Ready after $((SECONDS - t0)) s, VLLM_HTTP_TIMEOUT_KEEP_ALIVE=${VLLM_KEEPALIVE:-5}"
     k logs model-0 | grep -iE 'bound to cores|num_gpu_blocks|KV cache|prefix|block_size' | head -10 | tee -a "$LOG" || true
   fi
   say "backend $b: $(pod_targets)"
@@ -166,6 +166,8 @@ EOF
   [ "$(k get pod loadgen -o jsonpath='{.status.phase}')" = Succeeded ] || { tail -20 "$out"; exit 1; }
   grep '"summary"' "$out" | tee -a "$LOG"
   if [ "$arm" != service ]; then k logs deploy/router-epp -c epp --tail=2000 > "results/$b-$arm-$rep.epp.log" 2>&1 || true; fi
+  # Every router container, Envoy's access log included (response flags, e.g. UC).
+  if [ "$arm" != service ]; then k logs deploy/router-epp --all-containers --prefix --tail=-1 > "results/$b-$arm-$rep.router.log" 2>&1 || true; fi
   helm uninstall router -n "$NS" --wait >/dev/null 2>&1 || true
   ;;
 report)
