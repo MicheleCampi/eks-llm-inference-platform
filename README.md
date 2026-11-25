@@ -91,6 +91,16 @@ GKE pins its own release in
   backend reserves a core for the scheduler process, so on small machines
   decode runs on half the cores; `VLLM_CPU_NUM_OF_RESERVED_CPU=0` takes back
   most of it (+61 % to +7 %).
+- 2026-11-25, live #9 ([evidence](docs/evidence/live-a025-2026-11-25.md)):
+  release v2.4.3 (operator v0.18.0) came up from Git with the Session cost
+  tag, 12 of 12 Applications Healthy. Prefix-aware routing on EKS across two
+  zones: llm-d-router v1.0.0 with its default configuration in front of 2
+  vLLM CPU v0.34.0 replicas on m7i-flex.large (Xeon 8488C), against the
+  operator's Service, 3 repetitions: prefix-cache hit 0.84 against 0.52,
+  TTFT p50 0.43 s against 1.43 s; the llm-d-router #2059 scorers matched the
+  legacy ones (hit 0.762 against 0.747, TTFT p50 -7 %); 1919 of 1920
+  requests ok, one Envoy 503 "connection termination". S3'' deferred; the
+  session ran about 1 hour over its time limit (finding 1).
 
 ## Architecture
 
@@ -447,7 +457,9 @@ Known and accepted for this project; each would be closed before production.
   replicas, against a plain Service on the same pods and load. Prefix-cache
   hit rate 0.81 against 0.54, TTFT p50 0.36 s against 0.58-0.92 s, in two
   runs; 2.1x the hit rate with 4 simulated replicas
-  ([evidence](docs/evidence/prefix-routing-2026-11-23.md)).
+  ([evidence](docs/evidence/prefix-routing-2026-11-23.md)). On EKS across
+  two zones (live A-025): hit 0.84 against 0.52, TTFT p50 0.43 s against
+  1.43 s ([evidence](docs/evidence/live-a025-2026-11-25.md)).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
   (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since v2.3.5) and their standard fixes. A map, not a certification.
