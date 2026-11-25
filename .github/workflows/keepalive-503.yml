@@ -38,6 +38,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Runner CPU (start-up time of vLLM depends on it)
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+
       - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
         run: |
           bash ci/install-tools.sh > /dev/null
