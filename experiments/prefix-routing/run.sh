@@ -5,6 +5,8 @@
 #   bash run.sh up                     kind cluster (model cache mounted), namespace
 #   bash run.sh backend sim|vllm       model servers: simulator (4) or vLLM CPU (2)
 #   bash run.sh arm ARM REP            one measured run; ARM = service | random | prefix
+#                                      | legacy | ea (scorer parity, PARITY.md; needs
+#                                      ROUTER_SRC, a llm-d-router checkout at ROUTER_MAIN_COMMIT)
 #   bash run.sh report                 table of every summary in results/
 #   bash run.sh down                   delete the kind cluster
 # Every arm starts from empty prefix caches on every replica and, for the
@@ -97,7 +99,7 @@ backend)
   say "backend $b: $(pod_targets)"
   ;;
 arm)
-  arm=${2:?arm: service | random | prefix}; rep=${3:-1}
+  arm=${2:?arm: service | random | prefix | legacy | ea}; rep=${3:-1}
   b=$(backend_kind)
   out="results/$b-$arm-$rep.jsonl"
   reset_backend
@@ -110,6 +112,19 @@ arm)
         --set router.epp.image.tag="$EPP_IMAGE_TAG" --set router.proxy.image="$ENVOY_IMAGE" >/dev/null
       k rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"
       sleep 15  # EPP discovers the pods and scrapes their metrics at least once
+      url="http://router-epp:8081" ;;
+    legacy|ea)
+      # Chart and EPP from llm-d-router main at ROUTER_MAIN_COMMIT; the two
+      # arms differ only in values/$arm.yaml (the scorers).
+      [ "$(git -C "${ROUTER_SRC:?ROUTER_SRC: llm-d-router checkout}" rev-parse HEAD)" = "$ROUTER_MAIN_COMMIT" ] || { echo "ROUTER_SRC is not at $ROUTER_MAIN_COMMIT"; exit 1; }
+      img=${ROUTER_MAIN_EPP_IMAGE%:*}
+      helm upgrade -i router "$ROUTER_SRC/config/charts/llm-d-router-standalone" -n "$NS" --wait --timeout 300s \
+        -f values/router.yaml -f "values/$arm.yaml" \
+        --set router.epp.image.registry="${img%%/*}" --set router.epp.image.repository="${img#*/}" \
+        --set router.epp.image.tag="${ROUTER_MAIN_EPP_IMAGE##*:}" --set router.epp.image.pullPolicy=Never \
+        --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE" >/dev/null
+      k rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"
+      sleep 15
       url="http://router-epp:8081" ;;
     *) echo "unknown arm $arm"; exit 1 ;;
   esac
@@ -167,7 +182,7 @@ for f in sys.argv[1:]:
 med = lambda xs: st.median(xs) if xs else float("nan")
 print("| backend | arm | runs | requests ok/total | prefix hit rate | TTFT p50 s | TTFT p90 s | TTFT mean s | wall s | requests per replica |")
 print("|---|---|---|---|---|---|---|---|---|---|")
-for (b, arm), ss in sorted(rows.items(), key=lambda kv: (kv[0][0], ["service", "random", "prefix"].index(kv[0][1]) if kv[0][1] in ("service", "random", "prefix") else 9)):
+for (b, arm), ss in sorted(rows.items(), key=lambda kv: (kv[0][0], ["service", "random", "prefix", "legacy", "ea"].index(kv[0][1]) if kv[0][1] in ("service", "random", "prefix", "legacy", "ea") else 9)):
     ok = sum(s["ok"] for s in ss); tot = sum(s["requests"] for s in ss)
     hr = ", ".join(f'{s["hit_rate"]:.3f}' for s in ss)
     spread = " / ".join(",".join(str(int(p["success"])) for p in s["per_pod"].values()) for s in ss)

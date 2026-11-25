@@ -1,0 +1,33 @@
+# Scorer-parity arm "legacy": the plugin set of llm-d-router
+# test/perf/config/router-configs/optimized-baseline.yaml at ROUTER_MAIN_COMMIT
+# (queue-scorer 2, kv-cache-utilization-scorer 2, prefix-cache-scorer 3,
+# no-hit-lru-scorer 2). Same flags as the "ea" arm, so the scorers are the
+# only difference between the two. Protocol: PARITY.md.
+router:
+  epp:
+    flags:
+      allow-experimental-plugins: "true"
+    pluginsConfigFile: legacy-plugins.yaml
+    pluginsCustomConfig:
+      legacy-plugins.yaml: |
+        apiVersion: llm-d.ai/v1
+        kind: EndpointPickerConfig
+        plugins:
+        - type: queue-scorer
+        - type: kv-cache-utilization-scorer
+        - type: approx-prefix-cache-producer
+          parameters:
+            maxPrefixTokensToMatch: 100000
+        - type: prefix-cache-scorer
+        - type: no-hit-lru-scorer
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: queue-scorer
+            weight: 2
+          - pluginRef: kv-cache-utilization-scorer
+            weight: 2
+          - pluginRef: prefix-cache-scorer
+            weight: 3
+          - pluginRef: no-hit-lru-scorer
+            weight: 2
