@@ -9,6 +9,8 @@
 # overflows one replica: with 1 GiB of KV cache (VLLM_CPU_KVCACHE_SPACE=1)
 # it would take ~100 distinct 800-token prompts, and hours of CPU prefill.
 # VLLM_SERVER_DEV_MODE=1 exposes POST /reset_prefix_cache, used between arms.
+# VLLM_HTTP_TIMEOUT_KEEP_ALIVE is the server's idle-connection timeout (vLLM
+# default 5 s); run.sh sets it from VLLM_KEEPALIVE (KEEPALIVE.md).
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -53,6 +55,7 @@ spec:
             - {name: VLLM_CPU_KVCACHE_SPACE, value: "1"}
             - {name: VLLM_CPU_NUM_OF_RESERVED_CPU, value: "0"}
             - {name: VLLM_SERVER_DEV_MODE, value: "1"}
+            - {name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE, value: "__KEEPALIVE__"}
             - {name: VLLM_CACHE_ROOT, value: /tmp/vllm}
             - {name: TRITON_CACHE_DIR, value: /tmp/triton}
             - {name: XDG_CONFIG_HOME, value: /tmp/config}
