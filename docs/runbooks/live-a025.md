@@ -65,9 +65,13 @@ EC2NodeClasses, the operator image of v0.18.0.
 Expected within 20 minutes: `qwen-prefix: 2 replicas Ready`, one line per
 replica with node, zone (two different zones), instance type, capacity type
 and CPU model, and the engine's cache line (136 blocks). Then, unattended,
-one line every 10 s:
+one line every 10 s, detached from the SSH session (in A-025 a dropped
+session stopped a foreground loop at 18:46Z; Ctrl-C stops only `tail`):
 
-    bash experiments/prefix-routing/eks/run.sh all
+    nohup bash experiments/prefix-routing/eks/run.sh all > ~/run-all.log 2>&1 < /dev/null & sleep 2; tail -f ~/run-all.log
+
+After a drop, `tail -f ~/run-all.log` again; if the run itself stopped,
+the same `nohup` command resumes from the first run without a summary.
 
 12 runs (4 arms x 3 repetitions) of 160 requests, about 3 to 4 minutes
 each with the router install: about 45 minutes. It ends with the table of
@@ -122,7 +126,9 @@ Cost Explorer can give A-025 its own cost.
 ## Stop conditions
 
 - Apply + 2 h 30 min reached: destroy, whatever is left (runs not done are
-  recorded as not done).
+  recorded as not done). Nothing destroys the cluster by itself: in A-025
+  the destroy started 45 minutes after this limit. Write the limit time down
+  at apply and check the clock before every new step.
 - `qwen-prefix` not Ready 20 minutes after `run.sh backend`: record, skip
   goal 2, go to goal 3.
 - Goal 2 not finished at apply + 1 h 30 min: stop it after the current run,

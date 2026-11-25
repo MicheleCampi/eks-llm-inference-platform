@@ -4,7 +4,8 @@
 # docs/runbooks/live-a025.md (current kubectl context). One phase per command:
 #   bash run.sh backend            VllmService qwen-prefix, 2 replicas in 2 zones; nodes, zones, CPU
 #   bash run.sh arm ARM REP        one measured run; ARM = service | prefix | legacy | ea
-#   bash run.sh all                every arm, 3 repetitions, order reversed each time (EKS.md)
+#   bash run.sh all                every arm, 3 repetitions, order reversed each time (EKS.md);
+#                                  runs that already have a summary are kept (resumable)
 #   bash run.sh report             table of every summary in results/
 #   bash run.sh probe-router up    S3'': router + probe through it, on the game day model
 #   bash run.sh probe-router down
@@ -52,6 +53,9 @@ router_up() {
     legacy|ea)
       [ "$(git -C "${ROUTER_SRC:?ROUTER_SRC: llm-d-router checkout}" rev-parse HEAD)" = "$ROUTER_MAIN_COMMIT" ] || { echo "ROUTER_SRC is not at $ROUTER_MAIN_COMMIT"; exit 1; }
       local img=${ROUTER_MAIN_EPP_IMAGE_REMOTE%%:*} ref=${ROUTER_MAIN_EPP_IMAGE_REMOTE#*:}
+      # The chart in the source tree depends on ../routerlib (file://): package
+      # it first, or helm stops on "missing in charts/ directory" (A-025).
+      helm dependency build --skip-refresh "$ROUTER_SRC/config/charts/llm-d-router-standalone" >/dev/null
       helm upgrade -i router "$ROUTER_SRC/config/charts/llm-d-router-standalone" "${common[@]}" \
         --set router.epp.image.registry="${img%/*}" --set router.epp.image.repository="${img##*/}" \
         --set router.epp.image.tag="$ref" --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE" >/dev/null ;;
@@ -160,7 +164,12 @@ all)
   order=(service prefix legacy ea)
   for rep in 1 2 3; do
     if [ "$rep" = 2 ]; then seq=(ea legacy prefix service); else seq=("${order[@]}"); fi
-    for a in "${seq[@]}"; do arm "$a" "$rep"; done
+    for a in "${seq[@]}"; do
+      # Resumable: a run with a summary is kept, so after a dropped SSH session
+      # the same command goes on from the first run without one (A-025).
+      if grep -q '"summary"' "results/eks-$a-$rep.jsonl" 2>/dev/null; then say "arm $a rep $rep: done, kept"; continue; fi
+      arm "$a" "$rep"
+    done
   done
   python3 ../report.py results/eks-*.jsonl | tee results/report.md
   ;;
