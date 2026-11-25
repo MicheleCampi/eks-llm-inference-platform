@@ -1,0 +1,30 @@
+# llm-d-router-standalone v1.0.0: EPP with an Envoy sidecar in front of the
+# pods labelled app=model. No InferencePool and no Gateway: the chart's
+# standalone mode routes by label selector, so the Gateway API Inference
+# Extension CRDs are not needed for this comparison.
+# Requests sized for a 4-core kind node; the chart defaults (EPP 8 CPU,
+# Envoy 4 CPU) are for production nodes.
+router:
+  modelServers:
+    matchLabels:
+      app: model
+  inferencePool:
+    create: false
+  epp:
+    image:
+      registry: ghcr.io/llm-d
+      repository: llm-d-router-endpoint-picker
+      pullPolicy: IfNotPresent
+    resources:
+      requests:
+        cpu: 100m
+        memory: 128Mi
+      limits:
+        memory: 1Gi
+  proxy:
+    resources:
+      requests:
+        cpu: 100m
+        memory: 64Mi
+      limits:
+        memory: 512Mi
