@@ -1,0 +1,41 @@
+# EKS overlay on values/router.yaml (EKS.md). Applied after it and before
+# the arm's own values (prefix, legacy, ea), so the arms differ only in
+# their scorers, as on kind.
+#
+# - modelServers: the pods of the VllmService under test; run.sh sets the
+#   app label (qwen-prefix for the arms, qwen-0-5b-cpu for the S3'' router
+#   probe).
+# - affinity: never on a node that runs a model replica. On kind the EPP
+#   and Envoy shared the 4 cores with vLLM (evidence 2026-11-23, finding 3);
+#   here Karpenter gives them a node of their own in pool general. Pool
+#   system is not an option: restrict-system-pool admits only platform
+#   controllers there.
+# - requests: sized for that node (m7i-flex.large, 2 vCPU), not for the
+#   chart's production default (EPP 8 CPU, 8 GiB).
+# The NetworkPolicy the operator puts in front of each VllmService admits
+# only pods labelled inference.michelecampi.dev/client=<service>. The
+# v1.0.0 chart cannot label the EPP pod (router.epp.podLabels exists from
+# main only), so run.sh adds the label with kubectl patch after the install,
+# the same way for every arm.
+router:
+  epp:
+    affinity:
+      podAntiAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          - topologyKey: kubernetes.io/hostname
+            labelSelector:
+              matchExpressions:
+                - {key: app, operator: In, values: [qwen-prefix, qwen-0-5b-cpu]}
+    resources:
+      requests:
+        cpu: 500m
+        memory: 256Mi
+      limits:
+        memory: 1Gi
+  proxy:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 128Mi
+      limits:
+        memory: 512Mi

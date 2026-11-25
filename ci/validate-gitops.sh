@@ -256,6 +256,52 @@ sed 's/app: qwen-0-5b-cpu, app.kubernetes/app: other, app.kubernetes/g' ci/fixtu
 cmp -s ci/fixtures/kyverno/vllm-2-replicas.yaml "$W/neg-gameday-nopdb.yaml" && { echo "FAIL neg-gameday-nopdb: mutation changed nothing"; fail=1; }
 expect_reject neg-gameday-nopdb "needs a PodDisruptionBudget" "${KY[@]}" --resource "$W/neg-gameday-nopdb.yaml"
 check gameday-sli python3 -I ci/test-gameday-sli.py
+# Live A-025 (docs/runbooks/live-a025.md, experiments/prefix-routing/EKS.md):
+# the VllmService of the routing arms, valid for the operator release Argo CD
+# deploys and admitted; the Deployment the operator builds for it at 2
+# replicas admitted because its PDB selects its pods; the router-path probe
+# admitted outside pool system; and the router itself, as each arm installs
+# it (chart v1.0.0 by SHA-256, and main at ROUTER_MAIN_COMMIT), with the
+# client label run.sh patches in.
+ev() { sed -n "s/^$1=//p" experiments/prefix-routing/versions.env; }  # read, not sourced: its names (NS, MODEL) must not leak into this script
+ROUTER_CHART=$(ev ROUTER_CHART) ROUTER_VERSION=$(ev ROUTER_VERSION) EPP_IMAGE_TAG=$(ev EPP_IMAGE_TAG) ENVOY_IMAGE=$(ev ENVOY_IMAGE)
+ROUTER_MAIN_COMMIT=$(ev ROUTER_MAIN_COMMIT) ROUTER_MAIN_ENVOY_IMAGE=$(ev ROUTER_MAIN_ENVOY_IMAGE) ROUTER_MAIN_EPP_IMAGE_REMOTE=$(ev ROUTER_MAIN_EPP_IMAGE_REMOTE)
+check a025-schema "${KC[@]}" experiments/prefix-routing/eks/model.yaml experiments/prefix-routing/eks/probe-router.yaml
+check a025-model-complies "${KY[@]}" --resource experiments/prefix-routing/eks/model.yaml
+check a025-probe-router-complies "${KY[@]}" --resource experiments/prefix-routing/eks/probe-router.yaml
+sed 's/qwen-0-5b-cpu/qwen-prefix/g; s/inference-test/inference-bench/g' ci/fixtures/kyverno/vllm-2-replicas.yaml > "$W/a025-op-deploy.yaml"
+check a025-model-2-replicas "${KY[@]}" --resource "$W/a025-op-deploy.yaml"
+grep -q 'pass: 4, fail: 0, warn: 0, error: 0' "$W/a025-model-2-replicas.log" || { echo "FAIL a025-model-2-replicas: require-pdb not evaluated or not passed"; fail=1; }
+ROUTER_CHART_SHA256=c4787dcda88cae57124d8eaf7672d56e9993ce25d6ce62d8a5f71097640c09d3  # OCI layer digest of v1.0.0, read 2026-11-25
+mkdir -p "$W/router"
+router_chart() {  # OCI, anonymous; the tgz must be the pinned layer
+  DOCKER_CONFIG="$W/router" HELM_REGISTRY_CONFIG="$W/router/none.json" helm pull "$ROUTER_CHART" --version "$ROUTER_VERSION" -d "$W/router" >/dev/null &&
+  echo "$ROUTER_CHART_SHA256  $(ls "$W"/router/llm-d-router-standalone-*.tgz)" | sha256sum -c -
+}
+router_main() {  # the chart of llm-d-router main at the commit of the kind parity run
+  rm -rf "$W/llmd" && git init -q "$W/llmd" && git -C "$W/llmd" fetch -q --depth 1 https://github.com/llm-d/llm-d-router.git "$ROUTER_MAIN_COMMIT" &&
+  git -C "$W/llmd" checkout -q FETCH_HEAD && helm dependency build "$W/llmd/config/charts/llm-d-router-standalone" >/dev/null
+}
+check a025-router-chart retry router_chart
+check a025-router-main retry router_main
+PR=experiments/prefix-routing
+img=${ROUTER_MAIN_EPP_IMAGE_REMOTE%%:*}
+for arm in prefix legacy ea; do
+  if [ "$arm" = prefix ]; then
+    src=("$(ls "$W"/router/llm-d-router-standalone-*.tgz 2>/dev/null | head -1)")
+    hs=(--set router.epp.image.tag="$EPP_IMAGE_TAG" --set router.proxy.image="$ENVOY_IMAGE")
+  else
+    src=("$W/llmd/config/charts/llm-d-router-standalone")
+    hs=(--set router.epp.image.registry="${img%/*}" --set router.epp.image.repository="${img##*/}" --set router.epp.image.tag="${ROUTER_MAIN_EPP_IMAGE_REMOTE#*:}" --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE")
+  fi
+  helm template router "${src[@]}" -n inference-bench -f $PR/values/router.yaml -f $PR/eks/router-eks.yaml -f "$PR/values/$arm.yaml" \
+    --set router.modelServers.matchLabels.app=qwen-prefix "${hs[@]}" > "$W/a025-router-$arm.yaml" 2> "$W/a025-router-$arm.err" ||
+    { echo "FAIL a025-router-$arm-render: $(tail -3 "$W/a025-router-$arm.err")"; fail=1; continue; }
+  yq -i 'select(.kind == "Deployment" and .metadata.name == "router-epp").spec.template.metadata.labels["inference.michelecampi.dev/client"] = "qwen-prefix"' "$W/a025-router-$arm.yaml"
+  yq 'select(.kind == "Deployment")' "$W/a025-router-$arm.yaml" > "$W/a025-router-$arm-deploy.yaml"
+  check "a025-router-$arm-complies" "${KY[@]}" --resource "$W/a025-router-$arm-deploy.yaml"
+  check "a025-router-$arm-anti-affinity" sh -c "yq -e 'select(.kind == \"Deployment\").spec.template.spec.affinity.podAntiAffinity' '$W/a025-router-$arm.yaml' >/dev/null"
+done
 # restrict-system-pool (game day #1, S3): the probe's pod is admitted on pool
 # system; the same toleration from a team, or a wildcard toleration, is denied
 # (self-test below).

@@ -1,0 +1,67 @@
+# Prefix-aware routing on EKS (EKS.md): the model servers, as the platform
+# serves them. A VllmService of the operator (v0.18.0, the release v2.4.3
+# deploys), 2 replicas, one per zone (zoneSpread Required), on Karpenter
+# nodes m7i-flex.large. Same engine settings as the kind arm
+# (manifests/vllm.yaml), so the two results compare:
+#   - prefix caching on, cache cut to 136 blocks of 32 tokens (4352 tokens),
+#     so that 8 long prompts overflow one replica;
+#   - VLLM_CPU_NUM_OF_RESERVED_CPU=0 (vLLM #69464: on 2 cores the reserved
+#     scheduler core costs +61 %);
+#   - VLLM_SERVER_DEV_MODE=1 exposes POST /reset_prefix_cache, used between arms;
+#   - the model at the same pinned revision.
+# The keep-alive is left at the vLLM default (5 s): the Envoy 503 of
+# KEEPALIVE.md is observed as a team would meet it, not provoked.
+# The PDB comes first: Kyverno require-pdb denies the operator's Deployment
+# at 2 replicas without it. Applied by hand, deleted before destroy.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: inference-bench
+  labels: {kubernetes.io/metadata.name: inference-bench}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: qwen-prefix
+  namespace: inference-bench
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels: {app: qwen-prefix}
+---
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen-prefix
+  namespace: inference-bench
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 2
+  zoneSpread: Required
+  warmupStrategy: Eager
+  image: docker.io/vllm/vllm-openai-cpu:v0.34.0-x86_64@sha256:b14c3a46a4b08852b32528643e070d57f3731cccb0fa33ef86d4f3b3f8ac36c4
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs:
+    - --revision
+    - 7ae557604adf67be50417f59c2c2f167def9a775
+    - --tokenizer-revision
+    - 7ae557604adf67be50417f59c2c2f167def9a775
+    - --max-model-len
+    - "2048"
+    - --dtype
+    - bfloat16
+    - --enable-prefix-caching
+    - --block-size
+    - "32"
+    - --num-gpu-blocks-override
+    - "136"
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
+    - name: VLLM_CPU_NUM_OF_RESERVED_CPU
+      value: "0"
+    - name: VLLM_SERVER_DEV_MODE
+      value: "1"
