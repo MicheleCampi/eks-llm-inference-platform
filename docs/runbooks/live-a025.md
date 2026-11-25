@@ -1,5 +1,9 @@
 # Live session A-025: v2.4.3, prefix-aware routing on EKS, S3'' node shutdown
 
+**Done 2026-11-25** for goals 1 and 2: [evidence](../evidence/live-a025-2026-11-25.md).
+Goal 3 (S3'' and O1) was deferred to the next live and runs from this
+runbook, sections 6 to 8, with its own BUDGET entry.
+
 Written 2026-11-25, before the session. One bounded session on release
 **v2.4.3** (operator v0.18.0, Session cost tag of v2.4.2). Three goals,
 nothing else:
