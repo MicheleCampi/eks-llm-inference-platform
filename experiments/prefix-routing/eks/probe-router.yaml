@@ -1,0 +1,69 @@
+# S3'' observation O1 (experiments/prefix-routing/EKS.md): the game day probe
+# of tests/gameday/probe.yaml, same request, same retry rule, same JSON line,
+# sent through llm-d-router (EPP + Envoy, release "router" in inference-test,
+# installed by eks/run.sh probe-router up) instead of the Service.
+# The question: when the operator deletes the pod on the shutting-down node
+# (v0.18.0, ADR-0028), does the router stop picking it as fast as the Service
+# does? Applied and deleted by eks/run.sh probe-router up|down.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: probe-router
+  namespace: inference-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: probe-router}
+  template:
+    metadata:
+      labels:
+        app: probe-router
+        inference.michelecampi.dev/client: qwen-0-5b-cpu
+    spec:
+      # Pool system admits only tests/gameday/probe.yaml (restrict-system-pool),
+      # so this probe runs in pool general, never on a model node: it does not
+      # share the fate of the node S3'' shuts down.
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector: {matchLabels: {app: qwen-0-5b-cpu}}
+      containers:
+        - name: curl
+          image: docker.io/curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+          command: ["sh", "-c"]
+          args:
+            - >-
+              req() { curl -s -o /dev/null --connect-timeout 2 -m 30 -w '%{http_code} %{time_total} %{time_connect}'
+              http://router-epp:8081/v1/completions
+              -H 'Content-Type: application/json'
+              -d '{"model":"Qwen/Qwen2.5-0.5B-Instruct","prompt":"Kubernetes is","max_tokens":32}'; };
+              while true; do
+              t=$$(date -u +%Y-%m-%dT%H:%M:%SZ);
+              r=$$(req); e=$$?;
+              set -- $r;
+              f=$$((${1:-0} + 0)); c=$f; s=${2:-30}; n=1;
+              if [ $e -eq 7 ] || { [ $e -eq 28 ] && [ "${3:-0}" = "0.000000" ]; }; then
+              r=$$(req);
+              set -- $r;
+              c=$$((${1:-0} + 0)); s=$$(awk "BEGIN{print $s + ${2:-30}}"); n=2;
+              fi;
+              echo "{\"t\":\"$t\",\"code\":$c,\"s\":$s,\"tries\":$n,\"first\":$f}";
+              sleep 2;
+              done
+          resources:
+            requests: {cpu: 10m, memory: 16Mi}
+            limits: {memory: 32Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            privileged: false
+            capabilities:
+              drop:
+                - ALL
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65535
+        runAsGroup: 65535
+        seccompProfile:
+          type: RuntimeDefault

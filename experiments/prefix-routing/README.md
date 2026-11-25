@@ -106,5 +106,7 @@ bash experiments/prefix-routing/run.sh report
 bash experiments/prefix-routing/run.sh down
 ```
 
+On EKS (live A-025): [EKS.md](EKS.md) and `eks/run.sh`, same load generator and router values.
+
 In CI: `.github/workflows/prefix-routing.yml` (on pull requests that touch
 the experiment, and on demand).

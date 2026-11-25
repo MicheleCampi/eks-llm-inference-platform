@@ -24,3 +24,12 @@ spec:
       spec:
         minAvailable: 1
         selector: {matchLabels: {app: qwen-0-5b-cpu}}
+    # Live A-025: the PDB of experiments/prefix-routing/eks/model.yaml.
+    - apiVersion: policy/v1
+      kind: PodDisruptionBudget
+      metadata:
+        name: qwen-prefix
+        namespace: inference-bench
+      spec:
+        minAvailable: 1
+        selector: {matchLabels: {app: qwen-prefix}}
