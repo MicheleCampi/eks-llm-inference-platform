@@ -68,9 +68,13 @@ the connection is not retried, because a completion is not idempotent in
 cost. Each line keeps the first try's code (`first`) and the number of tries,
 so `scripts/gameday-sli.py` prints the user's availability and, next to it,
 the first-try availability: the retry must not hide what the servers did.
-The server-side fix is the operator's (v0.18.0, ADR-0028): a serving pod
-turns NotReady before SIGTERM also when the kubelet drains it on a node
-shutdown, which sets no deletionTimestamp.
+The server-side fix is the operator's (v0.18.0, ADR-0028, pinned in
+v2.4.3): on a node shutdown the kubelet drains its pods without the API and
+stops probing their readiness at once (kubernetes/kubernetes#105780), so a
+pod stayed routed until SIGTERM; the operator now watches Nodes and deletes
+its pods on a node that reports "node is shutting down", which takes them
+off the Service at once. The live check is
+[s3-node-shutdown-v2.4.3.md](s3-node-shutdown-v2.4.3.md).
 
 Prerequisites, each with a CI check in `ci/validate-gitops.sh` (done offline,
 2026-11-18):

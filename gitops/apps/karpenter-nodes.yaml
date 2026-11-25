@@ -37,7 +37,7 @@ spec:
       project: platform
       source:
         repoURL: https://github.com/MicheleCampi/eks-llm-inference-platform
-        targetRevision: v2.4.2
+        targetRevision: v2.4.3
         path: gitops/karpenter
         kustomize:
           patches:

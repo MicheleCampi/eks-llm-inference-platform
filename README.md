@@ -360,7 +360,7 @@ create the role it assumes), then its ARN is set as a repo variable:
 
     terraform init && terraform apply -var session=A-NNN  # 2 Ready nodes; A-NNN = the BUDGET entry
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.4.2                      # the release the cluster runs
+    git checkout v2.4.3                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.6.2 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
