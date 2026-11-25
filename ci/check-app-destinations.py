@@ -6,7 +6,8 @@ uses project default (closed on purpose), a project not found in the FILEs, or a
 destination no entry of its project matches. Matching follows Argo CD: glob on
 server (or name, when the Application targets a cluster by name) and namespace.
 A field missing from a project destination matches nothing; deny entries ("!")
-are not used here and are refused rather than half-implemented."""
+are not used here and are refused rather than half-implemented. The template
+of an ApplicationSet is checked as the Application it generates."""
 import sys
 from fnmatch import fnmatchcase
 import yaml
@@ -21,6 +22,8 @@ for f in files:
             projects[d["metadata"]["name"]] = d.get("spec") or {}
         elif d.get("kind") == "Application":
             apps.append((f, d))
+        elif d.get("kind") == "ApplicationSet":
+            apps.append((f, d["spec"]["template"]))
 if not apps:
     sys.exit("FAIL: no Application found in " + " ".join(files))
 

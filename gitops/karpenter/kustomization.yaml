@@ -1,0 +1,10 @@
+# Built by Argo CD for the Application that ApplicationSet karpenter-nodes
+# generates (gitops/apps/karpenter-nodes.yaml): the ApplicationSet adds the
+# Session cost tag to every EC2NodeClass with a kustomize patch.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ec2nodeclass.yaml
+  - ec2nodeclass-gpu.yaml
+  - nodepool-general.yaml
+  - nodepool-gpu.yaml

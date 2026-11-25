@@ -15,6 +15,10 @@ mock_provider "aws" {
   }
 }
 
+variables {
+  session = "A-000"
+}
+
 run "rejects_empty_list" {
   command = plan
   variables { public_access_cidrs = [] }

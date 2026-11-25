@@ -60,6 +60,18 @@ Black-box measurement at the client is the standard SLI for availability:
 it sees requests lost before a replica, which vLLM's own `/metrics` cannot
 (slo-policy.md, "What the objectives do not see").
 
+Since the re-run of 2026-11-21 (finding 2) the probe behaves like a careful
+client: a connect timeout of 2 s and **one retry, only when the first try
+never connected** (refused, or no connection within 2 s). The server never
+saw that request, so the retry cannot run a completion twice; a timeout after
+the connection is not retried, because a completion is not idempotent in
+cost. Each line keeps the first try's code (`first`) and the number of tries,
+so `scripts/gameday-sli.py` prints the user's availability and, next to it,
+the first-try availability: the retry must not hide what the servers did.
+The server-side fix is the operator's (v0.18.0, ADR-0028): a serving pod
+turns NotReady before SIGTERM also when the kubelet drains it on a node
+shutdown, which sets no deletionTimestamp.
+
 Prerequisites, each with a CI check in `ci/validate-gitops.sh` (done offline,
 2026-11-18):
 

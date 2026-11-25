@@ -243,11 +243,19 @@ tag; everything else reconciles from Git.
   cost budget (5 USD by default) that counts only spend tagged `Project`, with
   alerts on actual spend past 80% and forecast spend past 100% when
   `budget_alert_emails` is set (in `terraform.tfvars`, not committed). It has
-  no actions and no reports, which AWS Budgets does not charge for; `Project`
-  is activated as a cost allocation tag. The tags come from one map
-  (`local.tags` in `providers.tf`) and reach the Karpenter nodes (EC2NodeClass
-  `spec.tags`, compared by `ci/check-cost-tags.py`) and the node group's
-  instances, volumes and ENIs (launch template `tag_specifications`).
+  no actions and no reports, which AWS Budgets does not charge for. The tags
+  come from one map (`local.tags` in `providers.tf`) and reach the Karpenter
+  nodes (EC2NodeClass `spec.tags`, compared by `ci/check-cost-tags.py`) and
+  the node group's instances, volumes and ENIs (launch template
+  `tag_specifications`). **Cost per live session:** every resource also
+  carries `Session` = the session's BUDGET entry (A-NNN), a required input of
+  apply.yml and destroy.yml; the Karpenter nodes get it from a label on the
+  Argo CD cluster secret through ApplicationSet `karpenter-nodes`, which
+  generates no NodePool without it (fail closed). `Project` and `Session` are
+  activated as cost allocation tags in `bootstrap/ci-identity`, outside the
+  destroyed stack: deleting `aws_ce_cost_allocation_tag` deactivates the tag,
+  so until 2026-11-23 every destroy deactivated `Project`. Operator steps:
+  [cost-allocation.md](docs/runbooks/cost-allocation.md).
   `terraform test` asserts the filter, the alerts and the node tags. Not yet
   applied live.
 - **Misconfiguration scan with trivy, blocking.** `ci/validate-gitops.sh` runs
@@ -350,14 +358,15 @@ create the role it assumes), then its ARN is set as a repo variable:
 
 ## Run it
 
-    terraform init && terraform apply        # 2 Ready nodes
+    terraform init && terraform apply -var session=A-NNN  # 2 Ready nodes; A-NNN = the BUDGET entry
     aws eks update-kubeconfig --region eu-west-1 --name llm-inference
-    git checkout v2.4.1                      # the release the cluster runs
+    git checkout v2.4.2                      # the release the cluster runs
     kubectl create ns argocd
     kubectl apply -k gitops/argocd --server-side  # Argo CD v3.6.2 vendored (Dex removed), SHA-256 checked in CI
     kubectl apply -f gitops/apps/projects.yaml  # first: the root app belongs to project platform
     kubectl apply -f gitops/root-app.yaml    # deploys the tag in targetRevision
-    terraform destroy                        # stop the meter
+    scripts/label-session.sh                 # cluster label = Session tag: Karpenter NodePools appear, nodes tagged
+    terraform destroy -var session=A-NNN     # stop the meter
 
 ## Release and rollback
 

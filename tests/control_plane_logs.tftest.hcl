@@ -18,6 +18,7 @@ mock_provider "aws" {
 
 variables {
   public_access_cidrs = ["203.0.113.0/24"]
+  session             = "A-000"
 }
 
 run "audit_logging_on_by_default" {
