@@ -8,7 +8,7 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md); v2.4.2 adds the Session cost allocation tag and has not run live yet).
+  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md); v2.4.2 adds the Session cost allocation tag; v2.4.3 pins operator v0.18.0, which takes pods off the Service when their node shuts down (ADR-0028); neither has run live yet, and the first v2.4.x live repeats S3', see [../gameday/s3-node-shutdown-v2.4.3.md](../gameday/s3-node-shutdown-v2.4.3.md)).
 - The session's BUDGET id (A-NNN) is the `session` input of apply.yml and
   destroy.yml: every resource gets the tag `Session` with it, and Cost
   Explorer groups the cost by it ([cost-allocation.md](cost-allocation.md)).
@@ -29,13 +29,13 @@ between step 2 and step 9.
 
 ## 1. Check out the release
 
-    git checkout v2.4.2
+    git checkout v2.4.3
 
-Read this runbook from main: commits after v2.4.2 change documentation only.
+Read this runbook from main: commits after v2.4.3 change documentation only.
 
 ## 2. Apply through the pipeline
 
-    gh workflow run apply.yml --ref v2.4.2 -f session=A-NNN
+    gh workflow run apply.yml --ref v2.4.3 -f session=A-NNN
     gh run watch
 
 `A-NNN` is the BUDGET entry of this session; the workflow refuses anything
@@ -96,7 +96,7 @@ The token is typed, never pasted in a file or a chat:
 `PROM_URL` is the remote-write URL and `PROM_USER` the instance id of the
 Prometheus data source (Grafana Cloud, stack details).
 
-    gh workflow run observability.yml --ref v2.4.2
+    gh workflow run observability.yml --ref v2.4.3
     gh run watch
 
 Approve in environment `grafana`. Expected: folder, two dashboards, contact
@@ -171,7 +171,7 @@ the node role, and the apply role may not remove it (live attempt 2).
     kubectl delete ec2nodeclass default gpu   # Karpenter deletes the instance profile it created
     kubectl wait --for=delete ec2nodeclass/default ec2nodeclass/gpu --timeout=300s
     scripts/verify-teardown.sh       # must exit 1 with LEFT lines: proves the check sees live resources
-    gh workflow run destroy.yml --ref v2.4.2 -f session=A-NNN
+    gh workflow run destroy.yml --ref v2.4.3 -f session=A-NNN
 
 Approve the destroy plan in environment `live`. Grafana objects cost nothing
 and stay for the next session; the session's access policy (step 4) is deleted.
