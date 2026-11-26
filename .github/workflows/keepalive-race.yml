@@ -122,12 +122,12 @@ jobs:
           path: llm-d-router
           persist-credentials: false
 
-      - name: kind cluster and vLLM (keep-alive 5 s, the vLLM default)
+      - name: kind cluster and one vLLM replica (keep-alive 5 s, the vLLM default)
         run: |
           echo "ROUTER_SRC=$GITHUB_WORKSPACE/llm-d-router" >> "$GITHUB_ENV"
           HF_CACHE=$HOME/hf-cache bash experiments/prefix-routing/run.sh up
           kind load docker-image vllm-cpu-ci:pinned --name prefix-routing
-          VLLM_KEEPALIVE=5 bash experiments/prefix-routing/run.sh backend vllm
+          bash experiments/keepalive-race/kind.sh backend
 
       - name: Arm ${{ matrix.arm }} (KIND.md)
         env:
