@@ -1,0 +1,153 @@
+name: trace-replay
+
+# SLO under a public Azure LLM trace (CC-BY 4.0), service vs llm-d-router
+# v1.0.0, on kind, on a GitHub-hosted runner: zero cloud cost. Protocol and
+# hypotheses in experiments/trace-replay/README.md, results in docs/evidence/.
+# On a pull request only the smoke test runs (trace pinned by SHA-256, the
+# windows built, replay and report against a stub server); the measurement
+# with vLLM CPU runs on demand and does not gate (whether vLLM CPU starts
+# depends on the runner's CPU, docs/evidence/keepalive-race-2026-11-26.md).
+
+on:
+  pull_request:
+    paths:
+      - experiments/trace-replay/**
+      - .github/workflows/trace-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: trace-replay-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  smoke:
+    name: smoke (trace pinned, replay and report on a stub)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download both traces, check SHA-256, build the windows
+        run: bash experiments/trace-replay/run.sh trace
+      - name: Replay a compressed slice against the stub, then the report
+        working-directory: experiments/trace-replay
+        run: |
+          python3 stub_server.py 18000 & sleep 1
+          python3 trace.py lengths results/window-code.json 50 1 results/len.json
+          python3 replay.py --arm calib-low --url http://127.0.0.1:18000 --model stub --lengths results/len.json --closed 5 | tail -1
+          python3 trace.py thin results/window-code.json 2 1 results/schedule-code.json
+          python3 -c "import json; s=json.load(open('results/schedule-code.json')); s['requests']=[[r[0]/50,r[1],r[2]] for r in s['requests'] if r[0]<250]; json.dump(s,open('results/s.json','w'))"
+          for a in service router; do python3 replay.py --arm $a --url http://127.0.0.1:18000 --model stub --schedule results/s.json --ttft-slo 1 --tpot-slo 0.05 > results/code-$a-1.jsonl; done
+          echo '{"trace": "code", "T": 1, "P": 0.05, "C": 0, "rate": 0}' > results/calib-code.json
+          python3 report.py results | tee -a "$GITHUB_STEP_SUMMARY"
+
+  run:
+    name: ${{ matrix.trace }} (calibration, service and router twice)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        trace: [conv, code]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner CPU (stop on runners where vLLM CPU did not start)
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: vLLM CPU did not finish starting on such runners in this set-up (2026-11-26); re-run this job"; exit 1; }
+
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Download both traces, check SHA-256, build the windows
+        run: bash experiments/trace-replay/run.sh trace
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        run: |
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+
+      - name: Restore the model from the Actions cache
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: kind cluster
+        run: HF_CACHE=$HOME/hf-cache bash experiments/trace-replay/run.sh up
+
+      - name: Load the vLLM image into the node
+        run: kind load docker-image vllm-cpu-ci:pinned --name trace-replay
+
+      - name: Model servers
+        run: bash experiments/trace-replay/run.sh backend
+
+      - name: Calibration (T and P one at a time, then capacity C)
+        run: bash experiments/trace-replay/run.sh calibrate ${{ matrix.trace }}
+
+      # Two repetitions, the order of the arms reversed the second time.
+      - name: Repetition 1 (service, router)
+        run: for a in service router; do bash experiments/trace-replay/run.sh arm $a 1 ${{ matrix.trace }}; done
+      - name: Repetition 2 (router, service)
+        run: for a in router service; do bash experiments/trace-replay/run.sh arm $a 2 ${{ matrix.trace }}; done
+
+      - name: Report
+        if: always()
+        run: |
+          bash experiments/trace-replay/run.sh report || true
+          cat experiments/trace-replay/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s -n bench"
+          $k get pods,svc,deploy,sts -o wide || true
+          $k logs -l app=model --tail=80 || true
+          $k logs deploy/router-epp --all-containers --tail=80 || true
+          $k get events --sort-by=.lastTimestamp || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: trace-replay-${{ matrix.trace }}
+          path: |
+            experiments/trace-replay/results/*.jsonl
+            experiments/trace-replay/results/*.json
+            experiments/trace-replay/results/*.log
+            experiments/trace-replay/results/report.md
+          if-no-files-found: ignore

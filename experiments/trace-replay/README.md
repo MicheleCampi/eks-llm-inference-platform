@@ -49,9 +49,11 @@ scaled in two ways, each with one fixed rule:
 - **Lengths:** context and generated tokens divided by 8, minimum 1 (conv p50
   becomes 128 / 16). The shape of the distributions is kept; absolute
   lengths are not.
-- **Rate:** a calibration run measures capacity C, the highest constant rate
-  (req/s, both replicas) at which TTFT p95 stays under the SLO threshold
-  below with scaled lengths. Arrivals are then thinned by uniform random
+- **Rate:** a calibration run measures capacity C, the highest Poisson rate
+  (req/s, both replicas) of the ladder 0.25, 0.5, 1, 2, 4, 8, 16, 60 s per
+  step, at which TTFT p95 stays at or under T, TPOT p95 at or under P and no
+  request fails, refined by one step at the midpoint between the last pass
+  and the first fail. Arrivals are then thinned by uniform random
   sampling (seeded) so that the mean offered rate over the replay window is
   **0.6 x C**. Thinning keeps the burst shape: a minute at 5x the mean stays
   at 5x the mean.
@@ -80,9 +82,10 @@ Each arm runs twice per trace (conv, code), order reversed the second time.
 
 - **SLI:** a request is good if it completes without error, TTFT is at or
   below T, and mean time per output token is at or below P.
-- **T and P** come from the calibration run at 0.2 x C: T = 2 x its TTFT
-  p95, P = 2 x its TPOT p95, rounded up to 0.1 s and 0.01 s, written in the
-  report before the arms run.
+- **T and P** come from a calibration run with no queueing: one request at
+  a time (40 requests, lengths drawn from the window) through the Service.
+  T = 2 x its TTFT p95, P = 2 x its TPOT p95, rounded up to 0.1 s and
+  0.01 s, written in the report before the arms run (amendment 1).
 - **Objective:** 99 % of requests good over the window. Error budget = 1 %
   of requests. Budget burned = bad fraction / 1 %; above 100 % the SLO is
   broken.
@@ -123,3 +126,18 @@ A refuted hypothesis is published as refuted.
 
 The same replay is the load for the canary-with-rollback experiment (ROADMAP
 step 8) and for the closed-loop cost guardrail (step 9).
+
+## Amendments
+
+1. **2026-11-26, before any run, while writing the code.** (a) T and P came
+   from "the calibration run at 0.2 x C", but C is defined with T: circular.
+   T and P now come from a closed-loop run, one request at a time, which has
+   no queueing by construction. (b) If 0.6 x C is above the window's mean
+   rate nothing can be thinned; time is then compressed by that ratio
+   instead, which keeps every arrival and the burst shape and shortens the
+   replay (`trace.py thin`, reported as `time_speedup`). (c) A scaled
+   request longer than the backend's context window (2048 tokens, less a
+   margin of 48) has its context clipped; the count is reported (0 in both
+   20-minute windows on 2026-11-26). (d) Generated length is exact
+   (`ignore_eos`, `min_tokens`); prompts are built from words and the
+   server's own prompt token count is recorded next to the requested length.
