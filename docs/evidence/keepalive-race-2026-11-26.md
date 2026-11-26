@@ -89,7 +89,66 @@ B1's listener port as its admin port and its readiness loop polled it for
   of defence, not the fix.
 - Same result on Envoy v1.33.2 (chart v1.0.0) and v1.40.2 (main).
 
+### Same arms on a GitHub runner
+
+Workflow `keepalive-race`, job `local` (A1, B1, B2 side by side, FastAPI
+0.136.1 from `requirements.txt`): run
+[45880218897](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45880218897)
+A1 18/300, B1 0/300, B2 0/300 (28 retried); run
+[45890436096](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45890436096)
+A1 22/300, B1 0/300, B2 0/300 (23 retried). A1 stays under H1's 10 %
+threshold on the runners (6.0 % and 7.3 %); every failure is again `UC`
+`connection_termination` with a gap within 5 ms below the timeout.
+
 ## Part 2: real vLLM on kind
 
-To be added from the `keepalive-race` workflow run (KIND.md, hypotheses K3
-to K5), before any claim about vLLM itself.
+Protocol [`KIND.md`](../../experiments/keepalive-race/KIND.md). vLLM CPU
+v0.34.0 by digest (uvicorn 0.54.0, httptools 0.9.0, uvloop 0.23.0 inside the
+image, logged by the job), one replica, `VLLM_HTTP_TIMEOUT_KEEP_ALIVE=5`;
+chart and EPP of llm-d-router main at 32a075e2, Envoy `distroless-v1.40.2`,
+`legacy` scorer values; client in a pod, one connection to `router-epp:8081`,
+gap 4.90 to 5.00 s, 240 counted requests per job.
+
+| Arm | Run / job | Runner CPU | vLLM Ready | Failed / requests | Detail |
+|---|---|---|---|---|---|
+| chart | [45890436096](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45890436096/job/140151469169) | EPYC 9V45 | 166 s | **2 / 240** | both 503 `UC` `upstream_reset_before_response_started{connection_termination}`, 1 ms in Envoy, gaps 4.9902 and 4.9931 s |
+| idle (`idle_timeout: 4s`) | [45882928950](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45882928950/job/140126583396) | Xeon 6975P-C | 151 s | **0 / 240** | no access-log line with a flag |
+| retry (`retry_on: reset`) | [45882928950](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45882928950/job/140139018180) | EPYC 9V45 | 151 s | **0 / 240** | 1 request with 2 attempts (200, 70 ms) |
+| retry | [45890436096](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/45890436096/job/140151469140) | EPYC 9V45 | 167 s | **0 / 240** | 2 requests with 2 attempts (200, 51 ms each) |
+
+With one model server the only upstream of `original_destination_cluster`
+is the vLLM pod, so every `UC` line is on the Envoy-to-vLLM connection.
+
+| # | Hypothesis | Result |
+|---|---|---|
+| K3 | chart: ≥ 2 failures in 240, each `UC` `connection_termination` | **met** (2 / 240) |
+| K4 | idle: 0 failures in 240 | **met** |
+| K5 | retry: 0 failures at the client in 240 | **met** (twice; 3 requests saved by the retry) |
+
+Runner note, not a result: vLLM CPU v0.34.0 never reached Ready on the four
+jobs that got an AMD EPYC 7763 (no AVX-512): restarts with exit 1 and
+startup-probe kills for 15 to 25 minutes (runs 45880218897, 45882928950).
+It was Ready in 151 to 167 s on every job with AVX-512. The workflow now
+stops at once on a runner without AVX-512. This probably explains the start-up
+failures of KEEPALIVE.md's 1 s condition (eks #94), which logged no CPU.
+
+## Verdict
+
+The rare 503 of eks #89/#93/#94 and A-025 is the keep-alive race between
+Envoy and vLLM's uvicorn: Envoy reuses a pooled connection in the last few
+milliseconds before vLLM closes it as idle (5 s), because the
+llm-d-router-standalone chart sets no upstream idle timeout on
+`original_destination_cluster` (Envoy keeps it 1 h). Shown with a stand-in
+server and with real vLLM behind the real chart; same flag, details and
+duration as the live failure.
+
+The standard remedy is an **upstream `idle_timeout` below the model server's
+keep-alive** (4 s against vLLM's 5 s): 0 failures in 660 requests across
+both set-ups, where the chart's config failed 2 to 11 % in the same windows.
+`retry_on: reset` is a second line of defence that also retries
+non-idempotent work after a mid-request reset; `reset-before-request` does
+not cover this race.
+
+Next: the fix in this repository's router installs, then the upstream
+change to the chart (issue with "PR to follow", text read by Michele before
+it is published; held until liu-cong answers on llm-d-router #2059).
