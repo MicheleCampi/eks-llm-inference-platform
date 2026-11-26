@@ -141,3 +141,11 @@ step 8) and for the closed-loop cost guardrail (step 9).
    20-minute windows on 2026-11-26). (d) Generated length is exact
    (`ignore_eos`, `min_tokens`); prompts are built from words and the
    server's own prompt token count is recorded next to the requested length.
+2. **2026-11-27, after the first run (45905549505), set-up only.** The job
+   for `code` stopped at the start of repetition 2: a vLLM container was
+   killed (exit 137) during the `kubectl exec` that resets its prefix cache,
+   with the full default KV cache allocated. The reset now goes over HTTP
+   from a short-lived pod, and the vLLM memory limit is 6 GiB instead of 5.
+   Rules, thresholds and hypotheses are unchanged; the evidence uses a run
+   on this set-up for both traces, and reports the first run's repetition 1
+   next to it.

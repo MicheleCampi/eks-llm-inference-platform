@@ -3,7 +3,8 @@
 # Protocol, rules and hypotheses: README.md (written before any run).
 # Reuses the pinned set-up of ../prefix-routing (versions.env, Service,
 # router values, Envoy idle timeout); the vLLM replicas keep the default KV
-# cache (no --num-gpu-blocks-override: this experiment is not about eviction).
+# cache (no --num-gpu-blocks-override: this experiment is not about eviction)
+# and a memory limit of 6 GiB instead of 5 (full KV cache allocated).
 # Phases, one per command:
 #   bash run.sh trace                  download both CSVs, check SHA-256, build the windows
 #   bash run.sh up                     kind cluster (model cache mounted), namespace
@@ -81,11 +82,22 @@ EOF
   grep '"summary"' "$out" | python3 -c 'import json,sys; s=json.loads(sys.stdin.read())["summary"]; s.pop("meta",None); print(json.dumps(s))' | tee -a "$LOG"
 }
 
+# Empty prefix caches before each arm, over HTTP from a short-lived pod: an
+# exec into the vLLM container adds a process to its memory cgroup, and on
+# run 45905549505 (job code) the container was killed (exit 137) during that
+# exec, with the full default KV cache allocated.
 reset_backend() {
-  for p in $(k get pods -l app=model -o name); do
-    k exec "$p" -- python3 -c 'import urllib.request as u; r=u.urlopen(u.Request("http://127.0.0.1:8000/reset_prefix_cache", method="POST"), timeout=30); print(r.status)' \
-      | sed "s|^|reset_prefix_cache $p: HTTP |" | tee -a "$LOG"
-  done
+  local ips
+  ips=$(k get pods -l app=model -o jsonpath='{range .items[*]}{.status.podIP}{" "}{end}')
+  k delete pod reset --ignore-not-found --wait >/dev/null
+  k run reset --restart=Never --image="$LOADGEN_IMAGE" --command -- python3 -c '
+import sys, urllib.request as u
+for ip in sys.argv[1:]:
+    r = u.urlopen(u.Request(f"http://{ip}:8000/reset_prefix_cache", method="POST"), timeout=30)
+    print(f"reset_prefix_cache {ip}: HTTP {r.status}")' $ips >/dev/null
+  k wait --for=jsonpath='{.status.phase}'=Succeeded pod/reset --timeout=120s >/dev/null
+  k logs reset | tee -a "$LOG"
+  k delete pod reset --wait >/dev/null
 }
 
 case "$phase" in
@@ -119,7 +131,8 @@ EOF
 backend)
   # Same StatefulSet as prefix-routing, default KV cache (1 GiB per replica).
   sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" -e "s|__KEEPALIVE__|5|" \
-      -e "s| --num-gpu-blocks-override 136||" "$PR/manifests/vllm.yaml" | k apply -f - >/dev/null
+      -e "s| --num-gpu-blocks-override 136||" -e "s|limits: {memory: 5Gi}|limits: {memory: 6Gi}|" \
+      "$PR/manifests/vllm.yaml" | k apply -f - >/dev/null
   t0=$SECONDS
   until [ "$(k get statefulset model -o jsonpath='{.status.readyReplicas}')" = 2 ]; do
     [ $((SECONDS - t0)) -lt 900 ] || { k logs -l app=model --tail=50 || true; exit 1; }
