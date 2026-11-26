@@ -3,7 +3,8 @@ name: prefix-routing
 # Prefix-aware routing (llm-d-router v1.0.0) against kube-proxy, on kind, on
 # a GitHub-hosted runner: zero cloud cost. Protocol and hypotheses in
 # experiments/prefix-routing/README.md, results in docs/evidence/. Runs when
-# the experiment changes and on demand; it measures, it does not gate.
+# the experiment changes (simulator only) and on demand (simulator and vLLM);
+# it measures, it does not gate.
 
 on:
   pull_request:
@@ -33,7 +34,10 @@ jobs:
       matrix:
         # sim: 4 simulated replicas, many requests: where the router sends
         # them. vllm: 2 real vLLM CPU replicas: what that does to TTFT.
-        backend: [sim, vllm]
+        # On a pull request only sim runs: whether vLLM CPU starts depends on
+        # the runner's CPU (step "Runner CPU"), so the vllm measurement runs
+        # on demand (workflow_dispatch) and does not gate.
+        backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["sim", "vllm"]' || '["sim"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

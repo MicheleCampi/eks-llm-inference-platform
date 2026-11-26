@@ -5,7 +5,8 @@ name: keepalive-race
 # GitHub-hosted runner: zero cloud cost. Protocol and hypotheses in
 # experiments/keepalive-race/KIND.md, written before the run.
 # One job per arm: the chart's Envoy config as rendered, an upstream idle
-# timeout below vLLM's keep-alive, a retry on reset.
+# timeout below vLLM's keep-alive, a retry on reset. On a pull request only the
+# stand-in job runs (no cluster, any runner); the kind jobs run on demand.
 
 on:
   pull_request:
@@ -66,8 +67,13 @@ jobs:
           path: experiments/keepalive-race/results/
           if-no-files-found: ignore
 
+  # Real vLLM on kind: a measurement, run on demand (workflow_dispatch), not a
+  # pull-request check. Whether vLLM starts depends on the runner's CPU
+  # (step "Runner CPU"), so it cannot be a gate; the stand-in job above is
+  # the check on every pull request.
   kind:
     name: vllm on kind, arm ${{ matrix.arm }}
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     strategy:
