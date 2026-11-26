@@ -79,15 +79,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Runner CPU (the vLLM CPU image needs AVX-512)
-        # On 2026-11-26 vLLM CPU v0.34.0 never reached Ready on the four
-        # jobs that got an AMD EPYC 7763 (no AVX-512; restarts with exit 1 and
-        # startup-probe kills for 15 to 25 min), and was Ready in 151 s on the
-        # two that got an EPYC 9V45 or a Xeon 6975P-C (AVX-512). Stop in seconds rather than
-        # after 25 minutes; re-run the job to get another runner.
+      - name: Runner CPU (stop on runners where vLLM CPU did not start)
+        # On 2026-11-26 vLLM CPU v0.34.0 never reached Ready in this set-up on
+        # the four jobs that got an AMD EPYC 7763 (no AVX-512): warm-up, then
+        # restarts with exit 1 and startup-probe kills for 15 to 25 min. It was
+        # Ready in 151-167 s on every job with AVX-512 (EPYC 9V45, Xeon
+        # 6975P-C). The same image does start on an EPYC 7763 in the
+        # operator's CI, so the cause is not known; AVX-512 is the observed
+        # dividing line. Stop in seconds and re-run the job for another runner.
         run: |
           { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
-          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: the vLLM CPU image does not start here; re-run this job"; exit 1; }
+          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: vLLM CPU did not finish starting on such runners in this set-up (2026-11-26); re-run this job"; exit 1; }
 
       - name: Install pinned tools (helm, PyYAML from inference-platform-ci; kind by SHA-256)
         run: |

@@ -27,7 +27,7 @@ if [ "$arm" = backend ]; then
   # One vLLM replica from the start, keep-alive at the vLLM default of 5 s.
   # One replica is all the experiment needs, and starts with half the CPU.
   # (Run 45880218897 did not reach Ready with two; the cause was the
-  # runner's CPU, an EPYC 7763 without AVX-512: see the workflow.)
+  # runner: an EPYC 7763, see the workflow's CPU step.)
   sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" -e "s|__KEEPALIVE__|5|" \
       -e 's|^  replicas: 2$|  replicas: 1|' ../prefix-routing/manifests/vllm.yaml | k apply -f - >/dev/null
   [ "$(k get statefulset model -o jsonpath='{.spec.replicas}')" = 1 ] || { echo "replicas not 1"; exit 1; }

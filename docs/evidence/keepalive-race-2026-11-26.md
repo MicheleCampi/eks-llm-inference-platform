@@ -125,12 +125,16 @@ is the vLLM pod, so every `UC` line is on the Envoy-to-vLLM connection.
 | K4 | idle: 0 failures in 240 | **met** |
 | K5 | retry: 0 failures at the client in 240 | **met** (twice; 3 requests saved by the retry) |
 
-Runner note, not a result: vLLM CPU v0.34.0 never reached Ready on the four
-jobs that got an AMD EPYC 7763 (no AVX-512): restarts with exit 1 and
-startup-probe kills for 15 to 25 minutes (runs 45880218897, 45882928950).
-It was Ready in 151 to 167 s on every job with AVX-512. The workflow now
-stops at once on a runner without AVX-512. This probably explains the start-up
-failures of KEEPALIVE.md's 1 s condition (eks #94), which logged no CPU.
+Runner note, not a result: in this set-up vLLM CPU v0.34.0 never reached
+Ready on the four jobs that got an AMD EPYC 7763 (no AVX-512): warm-up
+(137 s with two replicas), then restarts with exit 1 and startup-probe kills
+for 15 to 25 minutes (runs 45880218897, 45882928950). It was Ready in 151 to
+167 s on every job with AVX-512 (EPYC 9V45, Xeon 6975P-C). The same image
+does start on an EPYC 7763 in the operator's CI (Ready means warm, more than
+120 s to the first token), so the cause is not known; AVX-512 is only the
+observed dividing line. The workflows now stop at once on such a runner. It
+may also explain the start-up failures of KEEPALIVE.md's 1 s condition (eks
+#94), which logged no CPU.
 
 ## Verdict
 
@@ -159,8 +163,8 @@ called by `run.sh` on kind and `eks/run.sh` on EKS, with the same
 `inference_pool_fallback`. `ENVOY_UPSTREAM_IDLE_S` in `versions.env`; `off`
 reproduces the runs before 2026-11-26. The patched config passes
 `envoy --mode validate` (v1.40.2). E5 of the next live session with the
-router is the check on EKS. The workflows that start vLLM stop at once on a
-runner without AVX-512.
+router is the check on EKS. The workflows that start vLLM on kind stop at
+once on a runner without AVX-512 (runner note above).
 
 Next: the upstream
 change to the chart (issue with "PR to follow", text read by Michele before
