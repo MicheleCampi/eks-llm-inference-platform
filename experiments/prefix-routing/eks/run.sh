@@ -17,6 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 . ../versions.env
+. ../envoy-idle.sh
 NS=inference-bench
 SVC=qwen-prefix
 CLIENT_LABEL=inference.michelecampi.dev/client
@@ -61,6 +62,8 @@ router_up() {
         --set router.epp.image.tag="$ref" --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE" >/dev/null ;;
     *) echo "unknown router arm $arm"; exit 1 ;;
   esac
+  # Before the label patch below, which rolls the pod and so loads it.
+  envoy_upstream_idle "$ns" | tee -a "$LOG"
   kubectl -n "$ns" patch deploy router-epp --type merge \
     -p "{\"spec\":{\"template\":{\"metadata\":{\"labels\":{\"$CLIENT_LABEL\":\"$app\"}}}}}" >/dev/null
   kubectl -n "$ns" rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"

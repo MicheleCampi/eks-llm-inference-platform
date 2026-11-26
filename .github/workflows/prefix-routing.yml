@@ -3,7 +3,8 @@ name: prefix-routing
 # Prefix-aware routing (llm-d-router v1.0.0) against kube-proxy, on kind, on
 # a GitHub-hosted runner: zero cloud cost. Protocol and hypotheses in
 # experiments/prefix-routing/README.md, results in docs/evidence/. Runs when
-# the experiment changes and on demand; it measures, it does not gate.
+# the experiment changes (simulator only) and on demand (simulator and vLLM);
+# it measures, it does not gate.
 
 on:
   pull_request:
@@ -33,11 +34,24 @@ jobs:
       matrix:
         # sim: 4 simulated replicas, many requests: where the router sends
         # them. vllm: 2 real vLLM CPU replicas: what that does to TTFT.
-        backend: [sim, vllm]
+        # On a pull request only sim runs: whether vLLM CPU starts depends on
+        # the runner's CPU (step "Runner CPU"), so the vllm measurement runs
+        # on demand (workflow_dispatch) and does not gate.
+        backend: ${{ fromJSON(github.event_name == 'workflow_dispatch' && '["sim", "vllm"]' || '["sim"]') }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Runner CPU (stop on runners where vLLM CPU did not start)
+        # vLLM CPU v0.34.0 did not reach Ready in the kind set-up on any of
+        # four runners with an AMD EPYC 7763 (no AVX-512), cause not known:
+        # docs/evidence/keepalive-race-2026-11-26.md. Stop in seconds rather
+        # than after the backend timeout; re-run the job.
+        if: matrix.backend == 'vllm'
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: vLLM CPU did not finish starting on such runners in this set-up (2026-11-26); re-run this job"; exit 1; }
 
       - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
         run: |
