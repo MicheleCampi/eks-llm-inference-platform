@@ -26,7 +26,7 @@ helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json
 k scale statefulset model --replicas=1 >/dev/null
 k rollout status statefulset model --timeout=600s >/dev/null
 until [ "$(k get pods -l app=model --no-headers | wc -l)" = 1 ]; do sleep 2; done
-say "model servers: $(k get pods -l app=model -o wide --no-headers | awk '{print $1" "$2" "$6}')"
+say "model servers: $(k get pods -l app=model -o wide --no-headers | awk '{print $1" "$2" "$3}')"
 say "vllm keep-alive: $(k get statefulset model -o jsonpath='{.spec.template.spec.containers[0].env[?(@.name=="VLLM_HTTP_TIMEOUT_KEEP_ALIVE")].value}') s; uvicorn $(k exec model-0 -- python3 -c 'import importlib.metadata as m; print(m.version("uvicorn"), "httptools", m.version("httptools"), "uvloop", m.version("uvloop"))')"
 
 [ "$(git -C "${ROUTER_SRC:?ROUTER_SRC: llm-d-router checkout}" rev-parse HEAD)" = "$ROUTER_MAIN_COMMIT" ] || { echo "ROUTER_SRC is not at $ROUTER_MAIN_COMMIT"; exit 1; }
@@ -39,7 +39,7 @@ helm upgrade -i router "$chart" -n "$NS" --wait --timeout 300s \
   --set router.epp.image.registry="${img%/*}" --set router.epp.image.repository="${img##*/}" \
   --set router.epp.image.tag="$ref" --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE" >/dev/null
 cm=$(k get configmap -o json | "$PY" -c 'import json,sys; print(next(c["metadata"]["name"] for c in json.load(sys.stdin)["items"] if any(x.endswith("envoy.yaml") for x in c.get("data", {}))))')
-k get configmap "$cm" -o json | "$PY" envoy_patch.py "$arm" 2> >(tee -a results/kind.log >&2) | k apply -f - >/dev/null
+k get configmap "$cm" -o json | "$PY" envoy_patch.py "$arm" 2> >(tee -a results/kind.log >&2) | k replace -f - >/dev/null
 k rollout restart deploy/router-epp >/dev/null
 k rollout status deploy/router-epp --timeout=300s | tee -a results/kind.log
 sleep 15  # EPP discovers the pod and scrapes its metrics at least once
@@ -61,12 +61,12 @@ spec:
       args:
         - pip install -q --disable-pip-version-check --root-user-action=ignore aiohttp==3.14.5 >&2 && exec python3 /app/client.py
       env:
-        - {name: URL, value: "http://router-epp:8081/v1/completions"}
-        - {name: MODEL, value: "$MODEL"}
-        - {name: PROMPT, value: "The keep-alive race, one short prompt."}
-        - {name: N, value: "$n"}
-        - {name: GAP_MIN, value: "$gmin"}
-        - {name: GAP_MAX, value: "$gmax"}
+        - {name: "URL", value: "http://router-epp:8081/v1/completions"}
+        - {name: "MODEL", value: "$MODEL"}
+        - {name: "PROMPT", value: "The keep-alive race, one short prompt."}
+        - {name: "N", value: "$n"}
+        - {name: "GAP_MIN", value: "$gmin"}
+        - {name: "GAP_MAX", value: "$gmax"}
       resources:
         requests: {cpu: 100m, memory: 64Mi}
       volumeMounts:
