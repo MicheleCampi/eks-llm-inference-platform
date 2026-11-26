@@ -25,9 +25,9 @@ helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json
 
 if [ "$arm" = backend ]; then
   # One vLLM replica from the start, keep-alive at the vLLM default of 5 s.
-  # Two replicas starting together on a 4-core runner did not reach Ready
-  # within the 900 s of ../prefix-routing/run.sh (run 45880218897), as in
-  # KEEPALIVE.md's 1 s condition; one replica needs half the CPU to start.
+  # One replica is all the experiment needs, and starts with half the CPU.
+  # (Run 45880218897 did not reach Ready with two; the cause was the
+  # runner's CPU, an EPYC 7763 without AVX-512: see the workflow.)
   sed -e "s|__MODEL__|$MODEL|" -e "s|__MODEL_REVISION__|$MODEL_REVISION|" -e "s|__KEEPALIVE__|5|" \
       -e 's|^  replicas: 2$|  replicas: 1|' ../prefix-routing/manifests/vllm.yaml | k apply -f - >/dev/null
   [ "$(k get statefulset model -o jsonpath='{.spec.replicas}')" = 1 ] || { echo "replicas not 1"; exit 1; }
