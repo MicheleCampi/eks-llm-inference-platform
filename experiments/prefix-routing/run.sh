@@ -17,6 +17,7 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 . ./versions.env
+. ./envoy-idle.sh
 mkdir -p results
 phase=${1:?phase: up | backend | arm | report | down}
 LOG="results/run.log"
@@ -110,6 +111,7 @@ arm)
       helm upgrade -i router "$ROUTER_CHART" --version "$ROUTER_VERSION" -n "$NS" --wait --timeout 300s \
         -f values/router.yaml -f "values/$arm.yaml" \
         --set router.epp.image.tag="$EPP_IMAGE_TAG" --set router.proxy.image="$ENVOY_IMAGE" >/dev/null
+      envoy_upstream_idle "$NS" restart | tee -a "$LOG"
       k rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"
       sleep 15  # EPP discovers the pods and scrapes their metrics at least once
       url="http://router-epp:8081" ;;
@@ -123,6 +125,7 @@ arm)
         --set router.epp.image.registry="${img%%/*}" --set router.epp.image.repository="${img#*/}" \
         --set router.epp.image.tag="${ROUTER_MAIN_EPP_IMAGE##*:}" --set router.epp.image.pullPolicy=Never \
         --set router.proxy.image="$ROUTER_MAIN_ENVOY_IMAGE" >/dev/null
+      envoy_upstream_idle "$NS" restart | tee -a "$LOG"
       k rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"
       sleep 15
       url="http://router-epp:8081" ;;

@@ -149,6 +149,19 @@ both set-ups, where the chart's config failed 2 to 11 % in the same windows.
 non-idempotent work after a mid-request reset; `reset-before-request` does
 not cover this race.
 
-Next: the fix in this repository's router installs, then the upstream
+## Fix in this repository
+
+Every router install of this repository now sets the upstream idle timeout
+to **4 s** on the rendered Envoy ConfigMap (`experiments/prefix-routing/envoy-idle.sh`,
+called by `run.sh` on kind and `eks/run.sh` on EKS, with the same
+`envoy_patch.py` arm `idle` that K4 and D2 tested), on
+`original_destination_cluster` and, when the chart renders it, on
+`inference_pool_fallback`. `ENVOY_UPSTREAM_IDLE_S` in `versions.env`; `off`
+reproduces the runs before 2026-11-26. The patched config passes
+`envoy --mode validate` (v1.40.2). E5 of the next live session with the
+router is the check on EKS. The workflows that start vLLM stop at once on a
+runner without AVX-512.
+
+Next: the upstream
 change to the chart (issue with "PR to follow", text read by Michele before
 it is published; held until liu-cong answers on llm-d-router #2059).
