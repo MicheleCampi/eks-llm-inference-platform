@@ -49,7 +49,7 @@ jobs:
           bash run.sh chart A1 1 0.993 0.999 301 > results/A1.txt 2>&1 & a=$!
           sleep 3; IDLE_S=0.5 bash run.sh idle B1 1 0.993 0.999 301 > results/B1.txt 2>&1 & b=$!
           sleep 3; RETRY_ON=reset bash run.sh retry B2 1 0.993 0.999 301 > results/B2.txt 2>&1 & c=$!
-          rc=0; for p in $a $b $c; do wait $p || rc=1; done
+          rc=0; for p in "$a" "$b" "$c"; do wait "$p" || rc=1; done
           cat results/*.txt | tee -a "$GITHUB_STEP_SUMMARY"
           exit $rc
       - name: Upload results
