@@ -1,0 +1,157 @@
+name: keepalive-race
+
+# The Envoy-to-vLLM keep-alive race on kind, against real vLLM CPU v0.34.0
+# behind the llm-d-router-standalone chart (EPP and ext_proc included), on a
+# GitHub-hosted runner: zero cloud cost. Protocol and hypotheses in
+# experiments/keepalive-race/KIND.md, written before the run.
+# One job per arm: the chart's Envoy config as rendered, an upstream idle
+# timeout below vLLM's keep-alive, a retry on reset.
+
+on:
+  pull_request:
+    paths:
+      - experiments/keepalive-race/**
+      - .github/workflows/keepalive-race.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: keepalive-race-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  local:
+    name: stand-in server, no cluster (A1, B1, B2)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Python packages from requirements.txt
+        run: |
+          python3 -m venv /tmp/venv
+          /tmp/venv/bin/pip install -q -r experiments/keepalive-race/requirements.txt
+      - name: Pull Envoy (the image the chart at llm-d-router main ships)
+        run: docker pull -q mirror.gcr.io/envoyproxy/envoy:distroless-v1.40.2@sha256:09ca6f2140a61ad8df11779a4a30d52b48433d444466328494f9188c9c35eded
+      - name: A1, B1, B2 side by side (README.md)
+        env:
+          PY: /tmp/venv/bin/python
+        run: |
+          cd experiments/keepalive-race
+          mkdir -p results
+          bash run.sh chart A1 1 0.993 0.999 301 > results/A1.txt 2>&1 & a=$!
+          sleep 3; IDLE_S=0.5 bash run.sh idle B1 1 0.993 0.999 301 > results/B1.txt 2>&1 & b=$!
+          sleep 3; RETRY_ON=reset bash run.sh retry B2 1 0.993 0.999 301 > results/B2.txt 2>&1 & c=$!
+          rc=0; for p in $a $b $c; do wait $p || rc=1; done
+          cat results/*.txt | tee -a "$GITHUB_STEP_SUMMARY"
+          exit $rc
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: keepalive-race-local
+          path: experiments/keepalive-race/results/
+          if-no-files-found: ignore
+
+  kind:
+    name: vllm on kind, arm ${{ matrix.arm }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        arm: [chart, idle, retry]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner CPU
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; } | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Install pinned tools (helm, PyYAML from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+          "$PWD/.ci-bin/helm" version --short; kind version; kubectl version --client | head -1
+          "$PWD/.ci-bin/venv/bin/python" -c 'import yaml; print("PyYAML", yaml.__version__)'
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        run: |
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+
+      - name: Restore the model from the Actions cache
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: Check out llm-d-router at the pinned main commit (chart)
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: llm-d/llm-d-router
+          ref: ${{ env.ROUTER_MAIN_COMMIT }}
+          path: llm-d-router
+          persist-credentials: false
+
+      - name: kind cluster and vLLM (keep-alive 5 s, the vLLM default)
+        run: |
+          echo "ROUTER_SRC=$GITHUB_WORKSPACE/llm-d-router" >> "$GITHUB_ENV"
+          HF_CACHE=$HOME/hf-cache bash experiments/prefix-routing/run.sh up
+          kind load docker-image vllm-cpu-ci:pinned --name prefix-routing
+          VLLM_KEEPALIVE=5 bash experiments/prefix-routing/run.sh backend vllm
+
+      - name: Arm ${{ matrix.arm }} (KIND.md)
+        env:
+          PY: ${{ github.workspace }}/.ci-bin/venv/bin/python
+          IDLE_S: "4"
+          RETRY_ON: reset
+        run: |
+          bash experiments/keepalive-race/kind.sh "${{ matrix.arm }}" "kind-${{ matrix.arm }}" 4.90 5.00 241
+          cat experiments/keepalive-race/results/kind.log >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s -n bench"
+          $k get pods -o wide || true
+          $k describe pods || true
+          $k logs deploy/router-epp --all-containers --tail=80 || true
+          $k logs race-client --tail=40 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: keepalive-race-kind-${{ matrix.arm }}
+          path: experiments/keepalive-race/results/
+          if-no-files-found: ignore
