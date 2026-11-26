@@ -1,0 +1,45 @@
+# The keep-alive race on EKS (EKS.md): one model server per arm, in its own
+# namespace, so each arm's router (standalone EPP: it sees only the pods of
+# its own namespace) has one pod to pick and one pooled connection to it,
+# as on kind (../KIND.md). run.sh replaces __NS__ with race-chart or
+# race-idle. Same engine as the A-025 routing arms (vLLM CPU v0.34.0 by
+# digest, model at the pinned revision, no reserved CPU) and the keep-alive
+# at the vLLM default, written out: 5 s.
+# One replica: Kyverno require-pdb applies from 2 replicas. Applied by
+# hand, deleted before S3''.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: __NS__
+  labels: {kubernetes.io/metadata.name: __NS__}
+---
+apiVersion: inference.michelecampi.dev/v1alpha1
+kind: VllmService
+metadata:
+  name: qwen-race
+  namespace: __NS__
+spec:
+  model: Qwen/Qwen2.5-0.5B-Instruct
+  replicas: 1
+  warmupStrategy: Eager
+  image: docker.io/vllm/vllm-openai-cpu:v0.34.0-x86_64@sha256:b14c3a46a4b08852b32528643e070d57f3731cccb0fa33ef86d4f3b3f8ac36c4
+  gpu: 0
+  cpu: "1"
+  memory: 6Gi
+  healthPath: /health
+  extraArgs:
+    - --revision
+    - 7ae557604adf67be50417f59c2c2f167def9a775
+    - --tokenizer-revision
+    - 7ae557604adf67be50417f59c2c2f167def9a775
+    - --max-model-len
+    - "2048"
+    - --dtype
+    - bfloat16
+  env:
+    - name: VLLM_CPU_KVCACHE_SPACE
+      value: "1"
+    - name: VLLM_CPU_NUM_OF_RESERVED_CPU
+      value: "0"
+    - name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE
+      value: "5"

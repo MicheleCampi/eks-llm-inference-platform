@@ -25,7 +25,7 @@ router:
           - topologyKey: kubernetes.io/hostname
             labelSelector:
               matchExpressions:
-                - {key: app, operator: In, values: [qwen-prefix, qwen-0-5b-cpu]}
+                - {key: app, operator: In, values: [qwen-prefix, qwen-0-5b-cpu, qwen-race]}
     resources:
       requests:
         cpu: 500m

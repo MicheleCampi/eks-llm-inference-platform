@@ -302,6 +302,17 @@ for arm in prefix legacy ea; do
   check "a025-router-$arm-complies" "${KY[@]}" --resource "$W/a025-router-$arm-deploy.yaml"
   check "a025-router-$arm-anti-affinity" sh -c "yq -e 'select(.kind == \"Deployment\").spec.template.spec.affinity.podAntiAffinity' '$W/a025-router-$arm.yaml' >/dev/null"
 done
+# Live A-026 (docs/runbooks/live-a026.md, experiments/keepalive-race/EKS.md):
+# the 1-replica VllmService of each race arm, valid and admitted; the client
+# pod admitted; the router of A-025's legacy arm, now in front of qwen-race,
+# rendered with the anti-affinity that keeps it off the model node.
+KR=experiments/keepalive-race/eks
+for a in chart idle; do sed "s/__NS__/race-$a/g" $KR/model.yaml > "$W/a026-model-$a.yaml"; bash $KR/run.sh client-yaml "race-$a" > "$W/a026-client-$a.yaml"; done
+rm -rf $KR/results
+check a026-schema "${KC[@]}" "$W/a026-model-chart.yaml" "$W/a026-model-idle.yaml" "$W/a026-client-chart.yaml"
+check a026-model-complies "${KY[@]}" --resource "$W/a026-model-chart.yaml"
+check a026-client-complies "${KY[@]}" --resource "$W/a026-client-chart.yaml"
+check a026-router-anti-affinity sh -c "helm template router '$W/llmd/config/charts/llm-d-router-standalone' -n race-chart -f $PR/values/router.yaml -f $PR/eks/router-eks.yaml -f $PR/values/legacy.yaml --set router.modelServers.matchLabels.app=qwen-race | yq -e 'select(.kind == \"Deployment\").spec.template.spec.affinity.podAntiAffinity.requiredDuringSchedulingIgnoredDuringExecution[0].labelSelector.matchExpressions[0].values | contains([\"qwen-race\"])' >/dev/null"
 # restrict-system-pool (game day #1, S3): the probe's pod is admitted on pool
 # system; the same toleration from a team, or a wildcard toleration, is denied
 # (self-test below).
