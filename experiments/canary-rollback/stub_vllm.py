@@ -58,7 +58,7 @@ class H(BaseHTTPRequestHandler):
         with slots:
             self.send_response(200); self.send_header("Content-Type", "text/event-stream")
             self.send_header("Connection", "close"); self.end_headers()
-            time.sleep(0.002 * p)
+            time.sleep(0.001 * p)  # the good version stays well inside T = 1 s (smoke only)
             observe(time.perf_counter() - t0)
             for _ in range(n):
                 self.wfile.write(b'data: {"choices":[{"text":"x"}]}\n\n'); self.wfile.flush(); time.sleep(0.03)
