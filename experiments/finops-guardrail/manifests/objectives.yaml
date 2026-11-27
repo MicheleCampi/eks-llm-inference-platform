@@ -1,0 +1,19 @@
+# One InferenceObjective per tenant (opt-in: a request without the header,
+# or naming no objective, gets priority 0). Arm guardrail only.
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: premium
+spec:
+  priority: 10
+  poolRefs:
+    - name: router
+---
+apiVersion: llm-d.ai/v1
+kind: InferenceObjective
+metadata:
+  name: batch
+spec:
+  priority: -10
+  poolRefs:
+    - name: router

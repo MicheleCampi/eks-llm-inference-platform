@@ -1,0 +1,50 @@
+# Arm guardrail: the chart's default scorers and weights at v1.0.0
+# (routerlib/templates/_config.yaml, unchanged) plus flow control:
+# - featureGates flowControl: requests wait in the EPP and dispatch by
+#   priority as capacity frees;
+# - priority-holdback-policy, explicit ceilings: batch (priority -10) is held
+#   back once pool saturation passes 0.6, premium (10) only at 1.0;
+# - defaultRequestTTL: a queued batch request is shed with 429 after the
+#   batch TTFT limit (10 x T, written in by run.sh at __BATCH_TTL__);
+#   band 10 has TTL 0s, so premium waits but is never shed.
+# Rollback: drop this file from the helm command (one line in Git).
+router:
+  epp:
+    pluginsConfigFile: guardrail.yaml
+    pluginsCustomConfig:
+      guardrail.yaml: |
+        apiVersion: llm-d.ai/v1
+        kind: EndpointPickerConfig
+        featureGates: ["flowControl"]
+        plugins:
+        - type: queue-scorer
+        - type: kv-cache-utilization-scorer
+        - type: prefix-cache-scorer
+        - type: metrics-data-source
+          parameters:
+            scheme: "http"
+            path: "/metrics"
+            insecureSkipVerify: true
+        - type: core-metrics-extractor
+        - type: priority-holdback-policy
+          name: holdback
+          parameters:
+            domain: explicit
+            ceilings:
+              "10": 1.0
+              "-10": 0.6
+        schedulingProfiles:
+        - name: default
+          plugins:
+          - pluginRef: queue-scorer
+            weight: 2
+          - pluginRef: kv-cache-utilization-scorer
+            weight: 2
+          - pluginRef: prefix-cache-scorer
+            weight: 3
+        flowControl:
+          usageLimitPolicyPluginRef: holdback
+          defaultRequestTTL: __BATCH_TTL__
+          priorityBands:
+          - priority: 10
+            defaultRequestTTL: 0s

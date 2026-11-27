@@ -18,6 +18,12 @@ TTFT = first data chunk; TPOT = (end - first chunk) / (completion tokens - 1).
 A request is good if HTTP 200, a first chunk arrived, TTFT <= --ttft-slo and,
 when it has more than one output token, TPOT <= --tpot-slo.
 
+--tenants premium=0.3,batch (finops-guardrail): each request is assigned a
+tenant with those probabilities (the rest to the last name, seeded apart
+from the prompts) and sends it in `x-llm-d-inference-objective`; the tenant
+and the router's `x-llm-d-flow-queue-duration-ms` response header are
+recorded. Without the flag nothing changes.
+
 Output: one JSON line per request ("req") and one summary ("summary").
 """
 import argparse
@@ -48,7 +54,7 @@ def prompt(i, n_words, rnd):
     return f"Request {i}. " + " ".join(rnd.choice(WORDS) for _ in range(max(1, n_words)))
 
 
-def one(url, model, text, gen):
+def one(url, model, text, gen, tenant=None):
     u = urllib.parse.urlparse(url)
     body = json.dumps({
         "model": model, "prompt": text, "max_tokens": gen, "min_tokens": gen,
@@ -59,11 +65,18 @@ def one(url, model, text, gen):
     ttft, usage = None, None
     conn = http.client.HTTPConnection(u.hostname, u.port or 80, timeout=600)
     try:
-        conn.request("POST", "/v1/completions", body, {"Content-Type": "application/json"})
+        headers = {"Content-Type": "application/json"}
+        if tenant:
+            headers["x-llm-d-inference-objective"] = tenant
+        conn.request("POST", "/v1/completions", body, headers)
         resp = conn.getresponse()
+        queue_ms = resp.getheader("x-llm-d-flow-queue-duration-ms")
         if resp.status != 200:
-            return {"code": resp.status, "error": resp.read(300).decode(errors="replace"),
-                    "e2e": time.perf_counter() - t0}
+            r = {"code": resp.status, "error": resp.read(300).decode(errors="replace"),
+                 "e2e": time.perf_counter() - t0}
+            if queue_ms is not None:
+                r["queue_ms"] = queue_ms
+            return r
         while True:
             line = resp.readline()
             if not line:
@@ -84,6 +97,8 @@ def one(url, model, text, gen):
     finally:
         conn.close()
     r = {"code": 200, "ttft": ttft, "e2e": e2e}
+    if queue_ms is not None:
+        r["queue_ms"] = queue_ms
     if usage:
         r["prompt_tokens"] = usage.get("prompt_tokens")
         r["completion_tokens"] = usage.get("completion_tokens")
@@ -124,6 +139,7 @@ def main():
     ap.add_argument("--tpot-slo", type=float)
     ap.add_argument("--seed", type=int, default=20261126)
     ap.add_argument("--workers", type=int, default=512)
+    ap.add_argument("--tenants", default="")
     a = ap.parse_args()
     rnd = random.Random(a.seed)
 
@@ -146,11 +162,25 @@ def main():
                 plan.append((t, *rnd.choice(pairs)))
             mode = "poisson"
     texts = [prompt(i, c, rnd) for i, (_, c, _) in enumerate(plan)]
+    tenants = [None] * len(plan)
+    if a.tenants:
+        mix = [(n, float(p)) for n, p in (x.split("=") for x in a.tenants.split(",")[:-1])]
+        last = a.tenants.split(",")[-1].split("=")[0]
+        trnd = random.Random(a.seed + 1)
+        for i in range(len(plan)):
+            u, acc, tenants[i] = trnd.random(), 0.0, last
+            for n, p in mix:
+                acc += p
+                if u < acc:
+                    tenants[i] = n
+                    break
 
     rows, lock = [], threading.Lock()
 
     def run(i, offset, ctx, gen, sent_at):
-        r = one(a.url, a.model, texts[i], gen)
+        r = one(a.url, a.model, texts[i], gen, tenants[i])
+        if tenants[i]:
+            r["tenant"] = tenants[i]
         r.update(arm=a.arm, i=i, offset=offset, context=ctx, generated=gen,
                  lag=round(sent_at - offset, 4) if offset is not None else None)
         r["good"] = good(r, a.ttft_slo, a.tpot_slo)
