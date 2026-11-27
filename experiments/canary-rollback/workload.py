@@ -22,7 +22,10 @@ label = "v1" if version == "v1" else "v2"
 extra = "--max-num-seqs 1" if version == "v2-bad" else ""
 
 if backend == "vllm":
-    memory = os.environ.get("VLLM_MEMORY", "4Gi")
+    # Three of these must fit Guaranteed on a 15.6 GiB runner node, next to
+    # Prometheus and the control plane: 4750Mi each (4Gi crashed at start on
+    # 2026-11-27, run 45964140468).
+    memory = os.environ.get("VLLM_MEMORY", "4750Mi")
     container = {
         "name": "vllm",
         "image": "vllm-cpu-ci:pinned",

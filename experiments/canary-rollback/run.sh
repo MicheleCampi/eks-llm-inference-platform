@@ -40,13 +40,25 @@ PROMETHEUS_IMAGE=quay.io/prometheus/prometheus:v3.16.0
 # the same.
 export LADDER="0.0625 0.125 0.25 0.5 1 2 4"
 
+# On a start failure: pod states, the last exit of each container, the
+# first error lines of the previous run (not the traceback frames), and any
+# OOM kill the host saw (a killed engine-core child does not mark the pod
+# OOMKilled).
+diagnose() {
+  k get pods -l app=model -o wide || true
+  k get pods -l app=model -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.status.containerStatuses[0].lastState.terminated.reason}{" exit "}{.status.containerStatuses[0].lastState.terminated.exitCode}{"\n"}{end}' || true
+  p=$(k get pods -l app=model -o name | head -1)
+  [ -n "$p" ] && { k logs "$p" --previous --tail=400 2>/dev/null || k logs "$p" --tail=400; } | grep -v '^  File \|^    ' | head -120 || true
+  sudo dmesg 2>/dev/null | grep -iE 'oom|killed process|memory cgroup' | tail -20 || true
+}
+
 wait_serving() {  # wait_serving N VERSION TIMEOUT_S
   local n=$1 v=$2 t0=$SECONDS
   until [ "$(k get pods -l app=model,version="$v" -o json | python3 -c '
 import json,sys
 print(sum(1 for p in json.load(sys.stdin)["items"] if "deletionTimestamp" not in p["metadata"]
           and any(c["type"]=="Ready" and c["status"]=="True" for c in p["status"].get("conditions",[]))))')" -ge "$n" ]; do
-    [ $((SECONDS - t0)) -lt "$3" ] || { k get pods -l app=model -o wide; k logs -l app=model --tail=40 || true; return 1; }
+    [ $((SECONDS - t0)) -lt "$3" ] || { diagnose; return 1; }
     sleep 5
   done
   echo $((SECONDS - t0))
