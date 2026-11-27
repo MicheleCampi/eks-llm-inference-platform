@@ -23,8 +23,8 @@ extra = "--max-num-seqs 1" if version == "v2-bad" else ""
 
 if backend == "vllm":
     # Three of these must fit Guaranteed on a 15.6 GiB runner node, next to
-    # Prometheus and the control plane: 4750Mi each (4Gi crashed at start on
-    # 2026-11-27, run 45964140468).
+    # Prometheus and the control plane: 4750Mi each, in eager mode (README
+    # amendment 1: with torch.compile the KV cache did not fit).
     memory = os.environ.get("VLLM_MEMORY", "4750Mi")
     container = {
         "name": "vllm",
@@ -40,7 +40,7 @@ if backend == "vllm":
                  "export VLLM_CPU_OMP_THREADS_BIND=$cores; "
                  "echo \"version $MODEL_REVISION_LABEL bound to cores $cores, extra args: '$EXTRA_ARGS'\"; "
                  "exec vllm serve \"$MODEL\" --revision \"$MODEL_REVISION\" --tokenizer-revision \"$MODEL_REVISION\" "
-                 "--port 8000 --dtype bfloat16 --max-model-len 2048 $EXTRA_ARGS"],
+                 "--port 8000 --dtype bfloat16 --max-model-len 2048 --enforce-eager $EXTRA_ARGS"],
         "env": [
             {"name": "MODEL", "value": os.environ["MODEL"]},
             {"name": "MODEL_REVISION", "value": os.environ["MODEL_REVISION"]},
@@ -66,6 +66,14 @@ if backend == "vllm":
         {"name": "tmp", "emptyDir": {}},
     ]
     startup_failures = 120
+    # Ready means warm (as vllm-coldstart-operator v0.17.0 does): the startup
+    # probe is one real 16-token completion, so a pod joins the Service only
+    # after its first request has been served (eager mode pays it there).
+    startup = {"exec": {"command": ["python3", "-c",
+        "import json, urllib.request as u, os; u.urlopen(u.Request('http://127.0.0.1:8000/v1/completions', "
+        "data=json.dumps({'model': os.environ['MODEL'], 'prompt': 'warm up', 'max_tokens': 16, 'min_tokens': 16, "
+        "'ignore_eos': True}).encode(), headers={'Content-Type': 'application/json'}), timeout=50).read()"]},
+        "timeoutSeconds": 60}
 else:
     memory = "128Mi"
     container = {
@@ -78,10 +86,11 @@ else:
     }
     volumes = [{"name": "stub", "configMap": {"name": "stub-vllm"}}]
     startup_failures = 24
+    startup = {"httpGet": {"path": "/health", "port": 8000}}
 
 container.update({
     "ports": [{"name": "http", "containerPort": 8000}],
-    "startupProbe": {"httpGet": {"path": "/health", "port": 8000}, "periodSeconds": 5, "failureThreshold": startup_failures},
+    "startupProbe": dict(startup, periodSeconds=5, failureThreshold=startup_failures),
     "readinessProbe": {"httpGet": {"path": "/health", "port": 8000}, "periodSeconds": 5},
     # The pod leaves the Service endpoints before the server stops.
     "lifecycle": {"preStop": {"sleep": {"seconds": 10}}},

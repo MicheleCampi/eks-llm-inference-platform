@@ -127,3 +127,16 @@ A refuted hypothesis is published as refuted.
   step 8, separately budgeted.
 
 ## Amendments
+
+1. **2026-11-27, before any valid run, set-up only.** With 1 core and a
+   4 GiB limit per pod, vLLM did not start: after `torch.compile` warm-up,
+   0.74 of 4.64 GiB was left for the 1 GiB KV cache (`ValueError` in
+   `determine_available_memory`; one pod OOMKilled), in run 45969472715.
+   Three Guaranteed pods must fit a 15.6 GiB runner node, so the pods now run
+   with `--enforce-eager` (no compile, less memory) and a 4750Mi limit, and,
+   since eager mode pays its warm-up on the first request, the startup probe
+   is one real 16-token completion (Ready means warm, as
+   vllm-coldstart-operator v0.17.0 does). Identical in v1, v2-good and
+   v2-bad, and T, P and C are measured on this set-up. The vLLM binding now
+   reads the process's CPU affinity. Rules, thresholds and hypotheses are
+   unchanged.
