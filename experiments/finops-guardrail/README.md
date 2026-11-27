@@ -166,3 +166,24 @@ The change, still configuration of llm-d-router v1.0.0 and nothing else:
 
 A queued premium request now waits in the EPP instead of sharing a replica,
 and its TTFT includes that wait. That is the trade H1 measures.
+
+## Amendment 2 (2026-11-27, after run 2)
+
+Run 2 (run 46064579619, amendment 1) is published as recorded in the
+evidence file: the guardrail engaged (batch queued in the EPP, queue time
+p95 2.0 to 3.3 s) and H1 was refuted again, H2 and H3 held. At 0.6 x C there
+is no peak above capacity. Each rep holds 130 premium requests (67 on the
+slower runner), so the premium budget of 1 % is 1.3 requests, and two reps
+of the same arm in one job differed by up to 3.5 times (538 % and 154 %).
+Batch never reached its TTL, so the 429 path was not exercised with vLLM.
+
+ROADMAP step 9 asks about a burst that the pool cannot absorb. The change:
+- the replay's mean rate is **1.5 x C** instead of 0.6 x C (`LOAD_X` in
+  `run.sh`), thinned from the same window with the same seed. C is
+  calibrated as before, so at the trace's peak the offered load is above
+  the rate at which the pool meets the SLO;
+- everything else is unchanged: both arms, amendment 1, TTL, tenants, SLOs,
+  hypotheses and thresholds.
+
+Runs 1 and 2 stay in the evidence. The verdict of ROADMAP step 9 is the
+one of run 3, with runs 1 and 2 next to it.

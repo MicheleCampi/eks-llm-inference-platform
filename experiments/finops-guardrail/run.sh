@@ -32,6 +32,8 @@ helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json
 # Fixed in README.md; changing one is an amendment.
 TENANTS="premium=0.3,batch"
 BATCH_TTFT_X=10
+LOAD_X=1.5               # amendment 2: mean offered rate = 1.5 x C (step 7 replays 0.6 x C)
+SEED=20261126            # the step 7 thinning seed
 # CRDs from pinned files (read 2026-11-27): InferencePool from Gateway API
 # Inference Extension v1.6.2 (the version llm-d-router v1.0.0's go.mod
 # requires), InferenceObjective from llm-d-router v1.0.0.
@@ -108,6 +110,18 @@ backend)
   ;;
 calibrate)
   bash "$TR/run.sh" calibrate "$TRACE"
+  # Amendment 2: the same window, thinned again from the full window to
+  # LOAD_X x C with the same seed (time is compressed if LOAD_X x C is above
+  # the window's mean rate, as in step 7 amendment 1).
+  C=$(calib C)
+  rate=$(python3 -c "print(round($LOAD_X * $C, 4))")
+  python3 "$TR/trace.py" thin "$TR/results/window-$TRACE.json" "$rate" "$SEED" "$TR/results/schedule-$TRACE.json" | tee -a "$LOG"
+  python3 - "$TR/results/calib-$TRACE.json" "$rate" "$LOAD_X" <<'PY2'
+import json, sys
+c = json.load(open(sys.argv[1])); c.update(rate=float(sys.argv[2]), load_x=float(sys.argv[3]))
+json.dump(c, open(sys.argv[1], "w"))
+PY2
+  say "calibrate: replay at $LOAD_X x C = $rate req/s mean (amendment 2)"
   ;;
 arm)
   arm=${2:?arm: nopolicy | guardrail}; name=${3:?name}; ttl=
