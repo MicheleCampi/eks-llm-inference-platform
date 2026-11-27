@@ -127,16 +127,24 @@ calibrate)
 tb)
   # T_b: smallest `le` of vLLM's TTFT histogram at or above T, as Prometheus stores it.
   T=$(python3 -c "import json; print(json.load(open('results/calib-$TRACE.json'))['T'])")
+  # Waits (up to 3 min) for the first scrape of the model pods.
   k run promq --restart=Never --image="$LOADGEN_IMAGE" --command -- python3 -c '
-import json, urllib.parse as p, urllib.request as u
+import json, time, urllib.parse as p, urllib.request as u
 q = p.urlencode({"match[]": "vllm:time_to_first_token_seconds_bucket"})
-print(json.dumps(json.load(u.urlopen(f"http://prometheus:9090/api/v1/label/le/values?{q}", timeout=30))["data"]))' >/dev/null
-  k wait --for=jsonpath='{.status.phase}'=Succeeded pod/promq --timeout=120s >/dev/null
+for _ in range(36):
+    d = json.load(u.urlopen(f"http://prometheus:9090/api/v1/label/le/values?{q}", timeout=30))["data"]
+    if d:
+        break
+    time.sleep(5)
+print(json.dumps(d))' >/dev/null
+  k wait --for=jsonpath='{.status.phase}'=Succeeded pod/promq --timeout=300s >/dev/null
   les=$(k logs promq); k delete pod promq --wait >/dev/null
   python3 - "$T" "$les" > results/tb.json <<'PY'
 import json, sys
 t, les = float(sys.argv[1]), json.loads(sys.argv[2])
 cands = sorted((float(l), l) for l in les if l != "+Inf" and float(l) >= t)
+if not cands:
+    sys.exit(f"no TTFT bucket at or above T = {t} s in Prometheus: {les}")
 print(json.dumps({"T": t, "T_b": cands[0][0], "le": cands[0][1], "buckets": les}))
 PY
   say "calibrate: $(cat results/calib-$TRACE.json); T_b $(python3 -c "import json; d=json.load(open('results/tb.json')); print(d['T_b'], 'le=' + d['le'])")"
