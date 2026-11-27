@@ -1,0 +1,186 @@
+# Zero-downtime model rollout: canary with automatic rollback on the SLO, on kind
+
+Written 2026-11-27, before any code or run. Results go to
+`docs/evidence/canary-rollback-<date>.md`; this file is not edited to fit them.
+Any change after the first run is a dated amendment at the end. Tool choice:
+[ADR 0003](../../docs/adr/0003-canary-rollout-tool.md).
+
+## Question
+
+"How do you ship a new model or vLLM version without downtime, and what
+happens when the new version is bad?" Under the replayed production-shaped
+traffic of `experiments/trace-replay` (ROADMAP step 7):
+
+1. Does the rollout drop requests (zero downtime), for a good and a bad
+   version?
+2. Does a canary with analysis on the SLO stop a bad version by itself, and
+   how fast?
+3. How much error budget does that save, compared with the rolling update
+   the platform's own operator does today (`maxSurge 1`, `maxUnavailable 0`,
+   no analysis: vllm-coldstart-operator v0.18.0, `src/main.rs`)?
+4. Does the analysis leave a good version alone (no false rollback)?
+
+## Set-up
+
+- One kind node on a GitHub-hosted runner (4 CPUs), kubelet with the
+  **static CPU manager policy**: every vLLM pod is Guaranteed QoS with
+  **1 exclusive core**, so the 2 stable pods and the 1 surge pod of a
+  rollout never share a core. The policy keeps the fourth core as the shared
+  pool, where the control plane, Prometheus, the rollout controller and the
+  replayer run (they request no CPU, so that 3 exclusive cores fit).
+- vLLM CPU v0.34.0, Qwen2.5-0.5B-Instruct at the pinned commit
+  (`../prefix-routing/versions.env`), `--max-model-len 2048`, default KV cache,
+  2 replicas behind a ClusterIP Service (kube-proxy). No router: this
+  experiment is about the rollout, and step 7 showed the router does not help
+  unique prompts.
+- **Argo Rollouts v1.10.2** (latest release, read 2026-11-27), canary
+  without a traffic router: the split is the ratio of pods behind the
+  Service. **Prometheus v3.16.0** scrapes every vLLM pod's `/metrics` every
+  10 s.
+- Readiness on `/health`; `terminationGracePeriodSeconds` 60 and a `preStop`
+  sleep of 10 s, so that a pod leaves the Service endpoints before vLLM stops.
+  The same values in every arm.
+- Traffic: the conv window of `experiments/trace-replay` (same pinned CSV,
+  same scaling rules), replayed open loop at 0.6 x C, with C measured on the
+  same runner at the start of the job.
+
+## Versions under test
+
+- **v1 (stable):** the set-up above.
+- **v2-good:** v1 with one environment variable changed in the pod template
+  (`MODEL_REVISION_LABEL=v2`). A new revision, the same server: it tests the
+  rollout mechanics, not a better model.
+- **v2-bad:** v1 with `--max-num-seqs 1`, one wrong value in a values file:
+  the server answers every request, one at a time, so under a burst the queue
+  and TTFT grow. A realistic regression that a health check does not see.
+
+## Arms
+
+Every arm is one job on its own runner; each job measures its own baseline,
+so arms are compared through their ratio to it, never across runners with
+different CPUs (step 7: the CPU changed the calibrated SLO 6 x).
+
+| Arm | Workload | New version | Strategy |
+|---|---|---|---|
+| `good-canary` | Argo Rollout | v2-good | canary with analysis |
+| `bad-canary` | Argo Rollout | v2-bad | canary with analysis |
+| `bad-rolling` | Deployment | v2-bad | RollingUpdate `maxSurge 1`, `maxUnavailable 0` (the operator's) |
+
+Canary steps (fixed here): `setWeight: 50` (1 of 2 pods on the new version,
+after a surge pod is Ready; same surge settings as the Deployment), then an
+**analysis step**: 8 measurements every 30 s, the first 60 s after the step
+starts (so that the canary pod has served requests), then `setWeight: 100`.
+A failed analysis aborts the rollout: Argo Rollouts scales the canary to 0
+and the stable pods back to 2.
+
+Sequence in each job: calibrate (T, P, C as in step 7), then **baseline**
+(replay, no rollout), **arm rep 1**, **arm rep 2**, **baseline**. In an arm
+rep the rollout is started 240 s into the 20-minute replay, before the
+busiest minute (the window is centred on it); between reps the workload is
+reset to v1 and every pod is Ready again.
+
+## SLO, analysis and measures (fixed here)
+
+- **SLI and objective:** as step 7. A request is good if it completes
+  without error, TTFT <= T and TPOT <= P; objective 99 %; T = 2 x TTFT p95 and
+  P = 2 x TPOT p95 of a closed-loop run on v1.
+- **Analysis (Argo Rollouts AnalysisTemplate, Prometheus provider):** the
+  fraction of the **canary pods'** requests with TTFT at or under T_b, over
+  the last 2 minutes, from vLLM's own histogram
+  (`vllm:time_to_first_token_seconds`); T_b is the smallest bucket boundary
+  of that histogram at or above T, read from `/metrics` and written in the
+  report. Measured every 30 s. **Success:** the fraction is at least
+  **0.856**, a burn rate of at most 14.4 x on a 99 % objective (the
+  fast-burn paging threshold of the Google SRE workbook). **Abort:** 2
+  failed measurements (`failureLimit: 1`); no data is a failed measurement.
+  TPOT is in the client SLI but not in the analysis: the server histogram
+  of time per output token has no boundary matched to P on every runner, and
+  the bad version fails on TTFT first. Said here so that it is not found later.
+- **Measures:** requests failed (HTTP error or connection error); error
+  budget burned over the whole replay and over the span from rollout start to
+  the end of the replay; time from rollout start to the canary pod Ready, to
+  the abort, and to the stable version serving alone again (bad-canary) or to
+  100 % new version (others), from the Rollout's and Deployment's status.
+
+## Hypotheses
+
+| # | Hypothesis | Arms |
+|---|---|---|
+| H1 | zero downtime: 0 failed requests in every rep of every arm, rollback included | all |
+| H2 | automatic rollback: bad-canary aborts within 5 minutes of the canary pod becoming Ready, and only v1 pods serve again within 7 minutes of it, in both reps, without a person | bad-canary |
+| H3 | bounded damage: from rollout start to the end of the replay, bad-canary burns at most half the error budget that bad-rolling burns over the same span, both taken as the excess over their own job's baseline (same span) | bad-canary vs bad-rolling |
+| H4 | no false rollback: good-canary is promoted in both reps, and its budget burned over the span is at most 1.5 x its baseline's | good-canary |
+
+A refuted hypothesis is published as refuted.
+
+## What this does not show
+
+- A GPU rollout or a real new model: the regression is a configuration
+  value, and v2-good is the same server.
+- Rollout of the platform's operator-managed services: the experiment uses
+  an Argo Rollout and a Deployment directly. How the operator hands its
+  Deployment to Argo Rollouts is in ADR 0003, Consequences.
+- Low-traffic analysis: at about 0.1 req/s on the canary pod a 2-minute
+  window holds about a dozen requests; the threshold is a burn rate, not a
+  statistical test.
+- An upgrade of Kubernetes or EKS itself: that is the live part of ROADMAP
+  step 8, separately budgeted.
+
+## Amendments
+
+1. **2026-11-27, before any valid run, set-up only.** With 1 core and a
+   4 GiB limit per pod, vLLM did not start: after `torch.compile` warm-up,
+   0.74 of 4.64 GiB was left for the 1 GiB KV cache (`ValueError` in
+   `determine_available_memory`; one pod OOMKilled), in run 45969472715.
+   Three Guaranteed pods must fit a 15.6 GiB runner node, so the pods now run
+   with `--enforce-eager` (no compile, less memory), a 512 MiB KV cache
+   (`--kv-cache-memory-bytes`; about 40,000 tokens, against 2048 per request:
+   in eager mode the three vLLM processes of a pod still reached the limit with
+   1 GiB, run 45971594674) and a 4750Mi limit, and,
+   since eager mode pays its warm-up on the first request, the startup probe
+   is one real 16-token completion (Ready means warm, as
+   vllm-coldstart-operator v0.17.0 does). Identical in v1, v2-good and
+   v2-bad, and T, P and C are measured on this set-up. The vLLM binding now
+   reads the process's CPU affinity. Rules, thresholds and hypotheses are
+   unchanged.
+2. **2026-11-27, after run 1, set-up and sequence only.** Run 1
+   (run 45972564757, head `7fdee8d`, one job per arm as written above) is
+   kept and published as run 1. It showed that the three jobs landed on
+   different CPUs and calibrated different loads: bad-rolling on an AMD EPYC
+   9V45 (T 2.1 s, replay 0.225 req/s), bad-canary and good-canary on an Intel
+   Xeon 6975P-C (replay 1.8 and 0.9 req/s). H3 compares bad-canary with
+   bad-rolling, and the ratio to each job's own baseline does not remove a
+   change of load by 8 x, so H3 could not be judged. From run 2:
+   - **Sequence.** Two jobs. Each runs every arm on the same runner after one
+     calibration: baseline, good-canary, bad-canary, bad-rolling, baseline
+     (job 1), and the reverse order of the arms (job 2), so that an arm is not
+     always measured at the same point of the job. Each arm has one rep per
+     job, two reps in all, as before; each job's baseline is the median of
+     its two baselines.
+   - **H3 inside one job.** bad-canary and bad-rolling are compared in the
+     same job, against the same baselines; H3 holds if it holds in both
+     jobs. H1, H2 and H4 and every threshold are unchanged.
+   - **More recording, no new rule.** The watcher records container
+     restarts, and after every rep the per-pod, per-minute request count and
+     fraction with TTFT at or under T_b are read from Prometheus. Run 1 had
+     failed requests in baselines too (4 and 37, 30 of them connection
+     refused, cause not identified): these records are there to find the
+     cause, not to exclude requests. Every failed request still counts.
+3. **2026-11-27, after run 2, runner rule and recording only.** In run 2
+   (head `d90d6b7`), job 2 (run 45987679316, Intel Xeon 6975P-C) ran as
+   planned. Job 1 (run 45987792601) landed on an Intel Xeon Platinum 8573C
+   whose VM exposes AVX-512 but not AMX: one request at a time had a TTFT p95
+   of 13.4 s (1.1 s on the 6975P-C), the calibration gave C = 0.094 req/s
+   and T = 26.8 s, and each 20-minute replay held 81 requests. At 0.06 req/s
+   a server that takes one request at a time is not overloaded, so v2-bad
+   was not bad there and the analysis passed it. Job 1 is published in full
+   with its own verdicts. From now on a job on an **Intel runner without
+   AMX** (`amx_tile` absent) stops before the set-up, like a runner without
+   AVX-512, and is run again; job 1 is run again under this rule and that
+   rerun is the second rep. AMD runners are unchanged (run 1's bad-rolling
+   job ran on one). After each rep the job log also lists every restarted
+   model container with its last termination reason, the OOM and probe
+   events, and the host's OOM kills: in run 2, job 2, the v1 pods restarted
+   in both baselines (3 and 2 restarts, 40 and 32 failed requests), and the
+   cause has to be read, not guessed. Hypotheses and thresholds are
+   unchanged.

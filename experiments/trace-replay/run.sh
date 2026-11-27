@@ -34,7 +34,7 @@ helm() { DOCKER_CONFIG="$HELM_ANON" HELM_REGISTRY_CONFIG="$HELM_ANON/config.json
 # Fixed in README.md; changing one is an amendment.
 LOAD_FACTOR=0.6          # mean offered rate = 0.6 x C
 CALIB_LOW_N=40           # closed-loop requests for T and P
-LADDER="0.25 0.5 1 2 4 8 16"
+LADDER=${LADDER:-"0.25 0.5 1 2 4 8 16"}  # canary-rollback overrides it (1-core replicas)
 LADDER_S=60
 SEED=20261126
 

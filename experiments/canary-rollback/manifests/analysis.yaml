@@ -1,0 +1,34 @@
+# README.md "SLO, analysis and measures": the fraction of the canary pods'
+# requests with TTFT at or under T_b over the last 2 minutes, from vLLM's own
+# histogram. Success: >= 0.856, a burn rate of at most 14.4 x on a 99 %
+# objective (Google SRE workbook, fast-burn page). 8 measurements every 30 s,
+# the first after 60 s; 2 failures abort the rollout. No data (no canary
+# requests, or none scraped) gives 0 or NaN and fails the measurement.
+# `le` is T_b exactly as Prometheus stores the bucket label (run.sh reads it
+# from Prometheus, not from the exposition, since Prometheus 3 normalises it).
+apiVersion: argoproj.io/v1alpha1
+kind: AnalysisTemplate
+metadata:
+  name: slo-ttft
+spec:
+  args:
+    - name: canary-hash
+    - name: le
+  metrics:
+    - name: ttft-good-fraction
+      initialDelay: 60s
+      interval: 30s
+      count: 8
+      failureLimit: 1
+      consecutiveErrorLimit: 1
+      successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.856
+      provider:
+        prometheus:
+          # The controller runs in argo-rollouts: the address must name the namespace.
+          address: http://prometheus.bench.svc.cluster.local:9090
+          query: |
+            (
+              sum(rate(vllm:time_to_first_token_seconds_bucket{hash="{{args.canary-hash}}",le="{{args.le}}"}[2m]))
+              /
+              sum(rate(vllm:time_to_first_token_seconds_count{hash="{{args.canary-hash}}"}[2m]))
+            ) or vector(0)
