@@ -58,7 +58,11 @@ wait_serving() {  # wait_serving N VERSION TIMEOUT_S
 import json,sys
 print(sum(1 for p in json.load(sys.stdin)["items"] if "deletionTimestamp" not in p["metadata"]
           and any(c["type"]=="Ready" and c["status"]=="True" for c in p["status"].get("conditions",[]))))')" -ge "$n" ]; do
-    [ $((SECONDS - t0)) -lt "$3" ] || { diagnose; return 1; }
+    # stdout is the caller's result: diagnostics go to stderr. Three restarts
+    # of a container is a crash loop, not a slow start.
+    [ $((SECONDS - t0)) -lt "$3" ] || { diagnose >&2; return 1; }
+    local r; r=$(k get pods -l app=model -o jsonpath='{range .items[*]}{.status.containerStatuses[0].restartCount}{"\n"}{end}' | sort -n | tail -1)
+    [ "${r:-0}" -lt 3 ] || { diagnose >&2; return 1; }
     sleep 5
   done
   echo $((SECONDS - t0))

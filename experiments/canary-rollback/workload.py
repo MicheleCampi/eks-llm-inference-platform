@@ -33,8 +33,11 @@ if backend == "vllm":
         "securityContext": {"allowPrivilegeEscalation": False, "readOnlyRootFilesystem": True},
         "command": ["bash", "-c"],
         # The static CPU manager gives the container one exclusive core; vLLM
-        # binds its OpenMP thread to that core, read from the cgroup.
-        "args": ["cores=$(cat /sys/fs/cgroup/cpuset.cpus.effective); export VLLM_CPU_OMP_THREADS_BIND=$cores; "
+        # binds its OpenMP thread to the cores the process may run on (its
+        # affinity: the cgroup's cpuset file is not always visible in kind).
+        "args": ["cores=$(python3 -c 'import os; c=sorted(os.sched_getaffinity(0)); "
+                 "print(c[0] if len(c) == 1 else f\"{c[0]}-{c[-1]}\")'); "
+                 "export VLLM_CPU_OMP_THREADS_BIND=$cores; "
                  "echo \"version $MODEL_REVISION_LABEL bound to cores $cores, extra args: '$EXTRA_ARGS'\"; "
                  "exec vllm serve \"$MODEL\" --revision \"$MODEL_REVISION\" --tokenizer-revision \"$MODEL_REVISION\" "
                  "--port 8000 --dtype bfloat16 --max-model-len 2048 $EXTRA_ARGS"],
