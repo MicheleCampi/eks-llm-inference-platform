@@ -132,3 +132,37 @@ A refuted hypothesis is published as refuted.
   runner and is priced in the report, not run.
 - Fairness among tenants of the same priority: one tenant per priority.
 - The tenant mix: 30/70 is a choice, fixed here, not a measurement.
+
+## Amendment 1 (2026-11-27, after run 1)
+
+Run 1 (runs 46052787808 job 1 and 46052881592, evidence in
+`docs/evidence/finops-guardrail-2026-11-27.md`) is published as recorded:
+H1 refuted, H2 and H3 held. But the guardrail **never engaged**: no batch
+request was held or shed (0 responses 429 in four `guardrail` reps), and the
+queue time header read 0 ms at p95. The cause is the saturation signal,
+not the policy. The chart's default detector (`utilization-detector`) scores
+each pod as max(waiting queue / 5, KV cache use / 0.8). vLLM's default
+`--max-num-seqs` admits every request into the running batch, so the waiting
+queue stays at 0, and 1 GiB of KV cache per replica is nearly empty with
+these lengths. The pool read as idle while two requests sharing one 2-core
+replica broke the premium SLO (premium burned 308 % to 1462 % of its
+budget in `nopolicy`).
+
+The change, still configuration of llm-d-router v1.0.0 and nothing else:
+- `flowControl.saturationDetector` is the **`concurrency-detector`**
+  (upstream, `requests` mode): saturation = requests in flight / declared
+  capacity. The capacity is **1 request per replica** (`maxConcurrency: 1`,
+  headroom 0). That is the concurrency at which one replica meets the
+  premium SLO here: one at a time, T and P hold by definition; run 1 shows
+  that two on one replica do not. Declaring capacity in requests is the
+  enterprise form of "the pool size is the budget".
+- The batch ceiling goes from 0.6 to **0.5**. With two slots, saturation
+  takes the values 0, 0.5 and 1, so 0.6 would admit batch exactly as far as
+  premium. At 0.5 batch is dispatched only into an empty pool, and one slot
+  stays for premium. Premium keeps 1.0.
+- Everything else is unchanged: the `nopolicy` arm, the vLLM pool (same
+  replicas, same flags, so the same cost), calibration, load 0.6 x C, TTL
+  10 x T, tenants, SLOs, hypotheses and thresholds.
+
+A queued premium request now waits in the EPP instead of sharing a replica,
+and its TTFT includes that wait. That is the trade H1 measures.

@@ -2,8 +2,12 @@
 # (routerlib/templates/_config.yaml, unchanged) plus flow control:
 # - featureGates flowControl: requests wait in the EPP and dispatch by
 #   priority as capacity frees;
+# - saturation from the concurrency-detector (README amendment 4): requests
+#   in flight over the pool's declared capacity, 1 per replica, the
+#   concurrency at which one replica meets the premium SLO;
 # - priority-holdback-policy, explicit ceilings: batch (priority -10) is held
-#   back once pool saturation passes 0.6, premium (10) only at 1.0;
+#   back once pool saturation reaches 0.5 (one of the two slots stays free
+#   for premium), premium (10) only at 1.0;
 # - defaultRequestTTL: a queued batch request is shed with 429 after the
 #   batch TTFT limit (10 x T, written in by run.sh at __BATCH_TTL__);
 #   band 10 has TTL 0s, so premium waits but is never shed.
@@ -26,13 +30,18 @@ router:
             path: "/metrics"
             insecureSkipVerify: true
         - type: core-metrics-extractor
+        - type: concurrency-detector
+          parameters:
+            concurrencyMode: requests
+            maxConcurrency: 1
+            headroom: 0.0
         - type: priority-holdback-policy
           name: holdback
           parameters:
             domain: explicit
             ceilings:
               "10": 1.0
-              "-10": 0.6
+              "-10": 0.5
         schedulingProfiles:
         - name: default
           plugins:
@@ -43,6 +52,8 @@ router:
           - pluginRef: prefix-cache-scorer
             weight: 3
         flowControl:
+          saturationDetector:
+            pluginRef: concurrency-detector
           usageLimitPolicyPluginRef: holdback
           defaultRequestTTL: __BATCH_TTL__
           priorityBands:
