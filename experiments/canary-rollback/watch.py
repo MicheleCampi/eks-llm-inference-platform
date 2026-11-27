@@ -27,8 +27,9 @@ def sample():
         v = p["metadata"]["labels"].get("version", "?")
         ready = any(c["type"] == "Ready" and c["status"] == "True" for c in p["status"].get("conditions", []))
         term = "deletionTimestamp" in p["metadata"]
-        d = by.setdefault(v, {"pods": 0, "serving": 0, "terminating": 0})
+        d = by.setdefault(v, {"pods": 0, "serving": 0, "terminating": 0, "restarts": 0})
         d["pods"] += 1
+        d["restarts"] += sum(c.get("restartCount", 0) for c in p["status"].get("containerStatuses", []))
         d["serving"] += ready and not term
         d["terminating"] += term
     s["versions"] = by

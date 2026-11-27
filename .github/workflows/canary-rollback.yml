@@ -8,8 +8,9 @@ name: canary-rollback
 # On a pull request the smoke test runs the whole chain (static CPU manager,
 # Argo Rollouts, Prometheus, analysis, abort, watcher, report) against a
 # stub server with vLLM's TTFT histogram: mechanics only, no numbers. The
-# measurement with vLLM CPU runs on demand, one job per arm, and does not
-# gate.
+# measurement with vLLM CPU runs on demand and does not gate: since
+# amendment 2 (README), two jobs, each running every arm on the same runner
+# after one calibration, in opposite orders.
 
 on:
   pull_request:
@@ -19,9 +20,9 @@ on:
       - .github/workflows/canary-rollback.yml
   workflow_dispatch:
     inputs:
-      arms:
-        description: "arms to run, comma-separated (a job that landed on a runner without AVX-512 is run again alone)"
-        default: "good-canary,bad-canary,bad-rolling"
+      jobs:
+        description: "jobs to run, comma-separated: 1 = good, bad canary, bad rolling; 2 = the reverse order (a job that landed on a runner without AVX-512 is run again alone)"
+        default: "1,2"
 
 permissions:
   contents: read
@@ -103,8 +104,8 @@ jobs:
           kubectl -n argo-rollouts logs deploy/argo-rollouts --tail=80 || true
           $k get events --sort-by=.lastTimestamp | tail -60 || true
 
-  arms:
-    name: arms to run
+  jobs:
+    name: jobs to run
     if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 2
@@ -113,26 +114,25 @@ jobs:
     steps:
       - id: pick
         env:
-          ARMS: ${{ inputs.arms }}
+          JOBS: ${{ inputs.jobs }}
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
-          all_ = {"good-canary": ("rollout", "v2-good"), "bad-canary": ("rollout", "v2-bad"),
-                  "bad-rolling": ("deployment", "v2-bad")}
-          want = [a.strip() for a in os.environ["ARMS"].split(",") if a.strip()]
-          assert want and all(a in all_ for a in want), f"unknown arm in {want}"
-          print("include=" + json.dumps([{"arm": a, "kind": all_[a][0], "version": all_[a][1]} for a in want]))
+          order = {"1": "good-canary bad-canary bad-rolling", "2": "bad-rolling bad-canary good-canary"}
+          want = [j.strip() for j in os.environ["JOBS"].split(",") if j.strip()]
+          assert want and all(j in order for j in want), f"unknown job in {want}"
+          print("include=" + json.dumps([{"job": j, "arms": order[j]} for j in want]))
           PY
 
   run:
-    name: ${{ matrix.arm }} (calibration, baseline, arm twice, baseline)
-    needs: arms
+    name: job ${{ matrix.job }} (calibration, baseline, ${{ matrix.arms }}, baseline)
+    needs: jobs
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(needs.arms.outputs.include) }}
+        include: ${{ fromJSON(needs.jobs.outputs.include) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -183,18 +183,27 @@ jobs:
         run: kind load docker-image vllm-cpu-ci:pinned --name canary-rollback
 
       - name: v1 model servers
-        run: bash experiments/canary-rollback/run.sh backend ${{ matrix.kind }} vllm
+        run: bash experiments/canary-rollback/run.sh backend rollout vllm
 
       - name: Calibration on v1 (T and P one at a time, capacity C, analysis bucket)
         run: bash experiments/canary-rollback/run.sh calibrate
 
-      - name: Baseline 1, arm 1, arm 2, baseline 2
+      - name: Baseline 1, every arm, baseline 2
+        env:
+          JOB: ${{ matrix.job }}
+          ARMS: ${{ matrix.arms }}
         run: |
           r=experiments/canary-rollback/run.sh
-          bash "$r" rep baseline-1 ${{ matrix.kind }} none vllm
-          bash "$r" rep ${{ matrix.arm }}-1 ${{ matrix.kind }} ${{ matrix.version }} vllm
-          bash "$r" rep ${{ matrix.arm }}-2 ${{ matrix.kind }} ${{ matrix.version }} vllm
-          bash "$r" rep baseline-2 ${{ matrix.kind }} none vllm
+          bash "$r" rep "baseline-$JOB-1" rollout none vllm
+          for arm in $ARMS; do
+            case "$arm" in
+              good-canary) set -- rollout v2-good ;;
+              bad-canary) set -- rollout v2-bad ;;
+              bad-rolling) set -- deployment v2-bad ;;
+            esac
+            bash "$r" rep "$arm-$JOB" "$1" "$2" vllm
+          done
+          bash "$r" rep "baseline-$JOB-2" rollout none vllm
 
       - name: Report
         if: always()
@@ -216,7 +225,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: canary-rollback-${{ matrix.arm }}
+          name: canary-rollback-job-${{ matrix.job }}
           path: |
             experiments/canary-rollback/results/*.jsonl
             experiments/canary-rollback/results/*.json

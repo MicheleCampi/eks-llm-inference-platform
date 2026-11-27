@@ -224,6 +224,26 @@ EOF
   k get rollout model -o yaml > "results/$name.rollout.yaml" 2>/dev/null || true
   k get analysisrun -o yaml > "results/$name.analysisrun.yaml" 2>/dev/null || true
   k get events --sort-by=.lastTimestamp > "results/$name.events.txt" 2>/dev/null || true
+  # Per pod, per minute: requests and the fraction with TTFT <= T_b, from
+  # vLLM's own histogram (README amendment 2), over the replay.
+  k delete pod promq --ignore-not-found --wait >/dev/null
+  k run promq --restart=Never --image="$LOADGEN_IMAGE" --command -- python3 -c '
+import json, sys, urllib.parse as p, urllib.request as u
+le, start, end = sys.argv[1], float(sys.argv[2]), float(sys.argv[3])
+def q(expr):
+    a = p.urlencode({"query": expr, "start": start, "end": end, "step": 60})
+    return json.load(u.urlopen(f"http://prometheus:9090/api/v1/query_range?{a}", timeout=60))["data"]["result"]
+n = q("sum by (pod, version) (increase(vllm:time_to_first_token_seconds_count[1m]))")
+g = q("sum by (pod, version) (increase(vllm:time_to_first_token_seconds_bucket{le=" + chr(34) + le + chr(34) + "}[1m]))")
+good = {(r["metric"]["pod"], r["metric"].get("version")): dict(r["values"]) for r in g}
+out = []
+for r in n:
+    key = (r["metric"]["pod"], r["metric"].get("version"))
+    out.append({"pod": key[0], "version": key[1], "minutes": [
+        [round(float(t) - start), round(float(v), 1), round(float(good.get(key, {}).get(t, 0)), 1)] for t, v in r["values"]]})
+print(json.dumps(out))' "$TB_LE" "$t_start" "$(( $(date +%s) ))" >/dev/null
+  k wait --for=jsonpath='{.status.phase}'=Succeeded pod/promq --timeout=180s >/dev/null && k logs promq > "results/$name.pods.json" || echo "per-pod query failed"
+  k delete pod promq --wait >/dev/null 2>&1 || true
   printf '{"name": "%s", "kind": "%s", "version": "%s", "replay_start": %s, "trigger": %s, "trigger_s": %s}\n' \
     "$name" "$kind_" "$version" "$t_start" "$trigger" "$TRIGGER_S" > "results/$name.meta.json"
   grep '"summary"' "results/$name.jsonl" | python3 -c 'import json,sys; s=json.loads(sys.stdin.read())["summary"]; s.pop("meta",None); print(json.dumps(s))' | tee -a "$LOG"

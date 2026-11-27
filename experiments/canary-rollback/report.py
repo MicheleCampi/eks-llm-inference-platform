@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Report of the canary experiment (README.md): per job (one arm, its own
-baselines) and rep, requests failed, error budget burned over the replay and
-over the span from the rollout start, rollout timings from the watcher; then
-H1-H4 against their written thresholds.
+"""Report of the canary experiment (README.md): per job (one runner, its own
+calibration and baselines; since amendment 2 every arm runs in each job) and
+rep, requests failed, error budget burned over the replay and over the span
+from the rollout start, rollout timings and container restarts from the
+watcher, per-pod requests and TTFT fraction from Prometheus; then H1-H4
+against their written thresholds, each comparison inside one job.
 Usage: report.py RESULTS_DIR [RESULTS_DIR ...]   (one directory per job)"""
 import glob
 import json
@@ -76,7 +78,31 @@ def rep_row(d, meta):
         row["all_v2_s"] = round(full - t0, 1) if full else None
         span_w = [s for s in w if s["t"] >= t0]
         row["min_serving"] = min((serving(s, "v1") + serving(s, "v2")) for s in span_w) if span_w else None
+    if os.path.exists(wpath):
+        w = [json.loads(l) for l in open(wpath)]
+        row["restarts"] = max((sum(v.get("restarts", 0) for v in s.get("versions", {}).values()) for s in w), default=None)
+    ppath = f"{d}/{meta['name']}.pods.json"
+    if os.path.exists(ppath):
+        try:
+            row["pods"] = json.load(open(ppath))
+        except ValueError:
+            row["pods"] = None
     return row
+
+
+def pods_lines(r):
+    """Per pod: requests and fraction with TTFT <= T_b over the replay; per
+    minute (offset from the replay start: requests/good) for v2 pods."""
+    out = []
+    for p in r.get("pods") or []:
+        n = sum(m[1] for m in p["minutes"])
+        g = sum(m[2] for m in p["minutes"])
+        line = f"  - {p['pod']} ({p['version']}): {n:.0f} requests, {g / n * 100:.0f} % at or under T_b" if n else \
+            f"  - {p['pod']} ({p['version']}): no requests"
+        if p["version"] == "v2" and n:
+            line += "; per minute " + " ".join(f"+{m[0]}s {m[1]:.0f}/{m[2]:.0f}" for m in p["minutes"] if m[1])
+        out.append(line)
+    return out
 
 
 def main():
@@ -85,9 +111,9 @@ def main():
         rows = []
         for f in sorted(glob.glob(f"{d}/*.meta.json")):
             rows.append(rep_row(d, json.load(open(f))))
-        arms = {r["arm"] for r in rows} - {"baseline"}
+        arms = sorted({r["arm"] for r in rows} - {"baseline"})
         if rows:
-            jobs[(arms.pop() if arms else "baseline-only") + " (" + os.path.basename(os.path.normpath(d)) + ")"] = (d, rows)
+            jobs[os.path.basename(os.path.normpath(d)) + " (" + (", ".join(arms) or "baseline only") + ")"] = (d, rows)
 
     fmt = lambda x, n=0: "n/a" if x is None else (f"{x * 100:.{n}f} %" if isinstance(x, float) else str(x))
     print("# Canary rollback report\n")
@@ -97,13 +123,17 @@ def main():
         print(f"## {job}\n")
         print(f"T = {c.get('T')} s, P = {c.get('P')} s, C = {c.get('C')} req/s, replay mean {c.get('rate')} req/s; "
               f"analysis bucket T_b = {tb.get('T_b')} s (le=\"{tb.get('le')}\")\n")
-        print("| rep | arm | requests | failed | budget burned (replay) | span from | budget burned (span) | canary Ready | abort | abort after Ready | v1 only after Ready | all v2 | min pods serving |")
-        print("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+        print("| rep | arm | requests | failed | budget burned (replay) | span from | budget burned (span) | canary Ready | abort | abort after Ready | v1 only after Ready | all v2 | min pods serving | restarts |")
+        print("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         for r in rows:
             print(f"| {r['name']} | {r['arm']} | {r['requests']} | {r['failed']} | {fmt(r['budget'])} | +{r['span_from_s']} s | "
                   f"{fmt(r['budget_span'])} | {r.get('canary_ready_s', 'n/a')} s | {r.get('abort_s', 'n/a')} s | "
                   f"{r.get('abort_after_ready_s', 'n/a')} s | {r.get('v1_only_after_ready_s', 'n/a')} s | {r.get('all_v2_s', 'n/a')} s | "
-                  f"{r.get('min_serving', 'n/a')} |")
+                  f"{r.get('min_serving', 'n/a')} | {r.get('restarts', 'n/a')} |")
+        for r in rows:
+            pl = pods_lines(r)
+            if pl:
+                print(f"\n- {r['name']} per pod:\n" + "\n".join(pl))
         for r in rows:
             for a in r.get("analysis", []):
                 print(f"\n- {r['name']} analysis {a['phase']}: {', '.join(str(v) for v in a['values'])}"
@@ -114,14 +144,10 @@ def main():
     def arm_rows(arm):
         return [(d, r) for _, (d, rows) in jobs.items() for r in rows if r["arm"] == arm]
 
-    def excess(arm):
-        out = []
-        for _, (d, rows) in jobs.items():
-            a = [r["budget_span"] for r in rows if r["arm"] == arm and r["budget_span"] is not None]
-            b = [r["budget_span"] for r in rows if r["arm"] == "baseline" and r["budget_span"] is not None]
-            if a and b:
-                out.append((st.median(a) - st.median(b), st.median(a), st.median(b)))
-        return out[0] if out else None
+    def excess(rows, arm):
+        a = [r["budget_span"] for r in rows if r["arm"] == arm and r["budget_span"] is not None]
+        b = [r["budget_span"] for r in rows if r["arm"] == "baseline" and r["budget_span"] is not None]
+        return (st.median(a) - st.median(b), st.median(a), st.median(b)) if a and b else None
 
     print("## Hypotheses\n")
     arm_reps = [r for _, (d, rows) in jobs.items() for r in rows if r["arm"] != "baseline"]
@@ -136,12 +162,18 @@ def main():
         print(f"- H2 ({'holds' if ok else 'refuted'}): " + "; ".join(
             f"{r['name']} abort {r.get('abort_after_ready_s')} s and v1 only {r.get('v1_only_after_ready_s')} s after canary Ready"
             for r in bc))
-    eb, er = excess("bad-canary"), excess("bad-rolling")
-    if eb and er:
-        ok = er[0] > 0 and eb[0] <= 0.5 * er[0]
-        print(f"- H3 ({'holds' if ok else 'refuted'}): excess budget over the span, bad-canary {eb[0] * 100:.0f} points "
-              f"({eb[1] * 100:.0f} % vs baseline {eb[2] * 100:.0f} %), bad-rolling {er[0] * 100:.0f} points "
-              f"({er[1] * 100:.0f} % vs baseline {er[2] * 100:.0f} %)")
+    h3 = []
+    for job, (d, rows) in sorted(jobs.items()):
+        eb, er = excess(rows, "bad-canary"), excess(rows, "bad-rolling")
+        if eb and er:
+            h3.append((job, er[0] > 0 and eb[0] <= 0.5 * er[0], eb, er))
+    if h3:
+        print(f"- H3 ({'holds' if all(ok for _, ok, _, _ in h3) else 'refuted'}; same job only): " + "; ".join(
+            f"{job}: bad-canary {eb[0] * 100:.0f} points ({eb[1] * 100:.0f} % vs baseline {eb[2] * 100:.0f} %), "
+            f"bad-rolling {er[0] * 100:.0f} points ({er[1] * 100:.0f} % vs baseline {er[2] * 100:.0f} %), "
+            f"{'holds' if ok else 'refuted'}" for job, ok, eb, er in h3))
+    else:
+        print("- H3 (not evaluated): no job holds both bad-canary and bad-rolling")
     gc = arm_rows("good-canary")
     if gc:
         res = []

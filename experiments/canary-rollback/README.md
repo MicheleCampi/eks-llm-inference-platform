@@ -143,3 +143,26 @@ A refuted hypothesis is published as refuted.
    v2-bad, and T, P and C are measured on this set-up. The vLLM binding now
    reads the process's CPU affinity. Rules, thresholds and hypotheses are
    unchanged.
+2. **2026-11-27, after run 1, set-up and sequence only.** Run 1
+   (run 45972564757, head `7fdee8d`, one job per arm as written above) is
+   kept and published as run 1. It showed that the three jobs landed on
+   different CPUs and calibrated different loads: bad-rolling on an AMD EPYC
+   9V45 (T 2.1 s, replay 0.225 req/s), bad-canary and good-canary on an Intel
+   Xeon 6975P-C (replay 1.8 and 0.9 req/s). H3 compares bad-canary with
+   bad-rolling, and the ratio to each job's own baseline does not remove a
+   change of load by 8 x, so H3 could not be judged. From run 2:
+   - **Sequence.** Two jobs. Each runs every arm on the same runner after one
+     calibration: baseline, good-canary, bad-canary, bad-rolling, baseline
+     (job 1), and the reverse order of the arms (job 2), so that an arm is not
+     always measured at the same point of the job. Each arm has one rep per
+     job, two reps in all, as before; each job's baseline is the median of
+     its two baselines.
+   - **H3 inside one job.** bad-canary and bad-rolling are compared in the
+     same job, against the same baselines; H3 holds if it holds in both
+     jobs. H1, H2 and H4 and every threshold are unchanged.
+   - **More recording, no new rule.** The watcher records container
+     restarts, and after every rep the per-pod, per-minute request count and
+     fraction with TTFT at or under T_b are read from Prometheus. Run 1 had
+     failed requests in baselines too (4 and 37, 30 of them connection
+     refused, cause not identified): these records are there to find the
+     cause, not to exclude requests. Every failed request still counts.
