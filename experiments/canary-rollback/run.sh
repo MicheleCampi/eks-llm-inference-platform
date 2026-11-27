@@ -81,8 +81,12 @@ EOF
   say "kind $(kind version); kubernetes $(kubectl version -o json | python3 -c 'import json,sys; print(json.load(sys.stdin)["serverVersion"]["gitVersion"])')"
   say "cpu: $(sed -n 's/^model name[[:space:]]*: //p' /proc/cpuinfo | head -1), $(nproc) cpus, $(awk '/MemTotal/ {printf "%.1f GiB", $2/1048576}' /proc/meminfo)"
   say "node allocatable: $(kubectl get node -o jsonpath='{.items[0].status.allocatable}')"
-  # Images pulled on the runner, digests printed, loaded into the node.
-  for img in "$ROLLOUTS_IMAGE" "$PROMETHEUS_IMAGE" "$LOADGEN_IMAGE"; do
+  # Images by tag pulled on the runner, digests printed, loaded into the node.
+  # LOADGEN_IMAGE is pinned by digest and pulled by the node itself: a
+  # digest-referenced image loaded with `kind load` fails to start
+  # (CreateContainerError "failed to check if this is a checkpoint image",
+  # smoke of 2026-11-27).
+  for img in "$ROLLOUTS_IMAGE" "$PROMETHEUS_IMAGE"; do
     for i in 1 2 3; do docker pull -q "$img" >/dev/null && break; sleep $((20 * i)); done
     say "image $img = $(docker image inspect --format '{{index .RepoDigests 0}}' "$img")"
     kind load docker-image "$img" --name "$CLUSTER" >/dev/null
