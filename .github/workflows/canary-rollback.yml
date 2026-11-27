@@ -62,9 +62,9 @@ jobs:
       - name: Baseline, bad canary, good canary, bad rolling update
         working-directory: experiments/canary-rollback
         run: |
-          keep() { mkdir -p "results/$1"; cp results/calib-conv.json results/tb.json "results/$1/"; mv results/$2.* "results/$1/"; }
+          keep() { mkdir -p "results/$1"; cp results/calib-conv.json results/tb.json "results/$1/"; mv "results/$2".* "results/$1/"; }
           bash run.sh rep baseline-1 rollout none stub
-          for a in bad-canary good-canary; do mkdir -p results/$a; cp results/baseline-1.* results/$a/; done
+          for a in bad-canary good-canary; do mkdir -p "results/$a"; cp results/baseline-1.* "results/$a/"; done
           mkdir -p results/bad-rolling; cp results/baseline-1.* results/bad-rolling/; rm results/baseline-1.*
           bash run.sh rep bad-canary-1 rollout v2-bad stub; keep bad-canary bad-canary-1
           bash run.sh rep good-canary-1 rollout v2-good stub; keep good-canary good-canary-1
@@ -153,10 +153,10 @@ jobs:
       - name: Baseline 1, arm 1, arm 2, baseline 2
         run: |
           r=experiments/canary-rollback/run.sh
-          bash $r rep baseline-1 ${{ matrix.kind }} none vllm
-          bash $r rep ${{ matrix.arm }}-1 ${{ matrix.kind }} ${{ matrix.version }} vllm
-          bash $r rep ${{ matrix.arm }}-2 ${{ matrix.kind }} ${{ matrix.version }} vllm
-          bash $r rep baseline-2 ${{ matrix.kind }} none vllm
+          bash "$r" rep baseline-1 ${{ matrix.kind }} none vllm
+          bash "$r" rep ${{ matrix.arm }}-1 ${{ matrix.kind }} ${{ matrix.version }} vllm
+          bash "$r" rep ${{ matrix.arm }}-2 ${{ matrix.kind }} ${{ matrix.version }} vllm
+          bash "$r" rep baseline-2 ${{ matrix.kind }} none vllm
 
       - name: Report
         if: always()
