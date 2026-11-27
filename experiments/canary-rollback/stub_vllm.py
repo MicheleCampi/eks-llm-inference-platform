@@ -61,7 +61,7 @@ class H(BaseHTTPRequestHandler):
             time.sleep(0.002 * p)
             observe(time.perf_counter() - t0)
             for _ in range(n):
-                self.wfile.write(b'data: {"choices":[{"text":"x"}]}\n\n'); self.wfile.flush(); time.sleep(0.01)
+                self.wfile.write(b'data: {"choices":[{"text":"x"}]}\n\n'); self.wfile.flush(); time.sleep(0.03)
             self.wfile.write(("data: " + json.dumps({"choices": [], "usage": {"prompt_tokens": p, "completion_tokens": n}}) + "\n\n").encode())
             self.wfile.write(b"data: [DONE]\n\n"); self.wfile.flush()
 
