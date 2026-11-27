@@ -40,14 +40,13 @@ if backend == "vllm":
                  "export VLLM_CPU_OMP_THREADS_BIND=$cores; "
                  "echo \"version $MODEL_REVISION_LABEL bound to cores $cores, extra args: '$EXTRA_ARGS'\"; "
                  "exec vllm serve \"$MODEL\" --revision \"$MODEL_REVISION\" --tokenizer-revision \"$MODEL_REVISION\" "
-                 "--port 8000 --dtype bfloat16 --max-model-len 2048 --enforce-eager $EXTRA_ARGS"],
+                 "--port 8000 --dtype bfloat16 --max-model-len 2048 --enforce-eager --kv-cache-memory-bytes 536870912 $EXTRA_ARGS"],
         "env": [
             {"name": "MODEL", "value": os.environ["MODEL"]},
             {"name": "MODEL_REVISION", "value": os.environ["MODEL_REVISION"]},
             {"name": "MODEL_REVISION_LABEL", "value": label},
             {"name": "EXTRA_ARGS", "value": extra},
             {"name": "HF_HUB_OFFLINE", "value": "1"},
-            {"name": "VLLM_CPU_KVCACHE_SPACE", "value": "1"},
             {"name": "VLLM_CPU_NUM_OF_RESERVED_CPU", "value": "0"},
             {"name": "VLLM_SERVER_DEV_MODE", "value": "1"},
             {"name": "VLLM_CACHE_ROOT", "value": "/tmp/vllm"},

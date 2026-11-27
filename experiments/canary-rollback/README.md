@@ -133,7 +133,10 @@ A refuted hypothesis is published as refuted.
    0.74 of 4.64 GiB was left for the 1 GiB KV cache (`ValueError` in
    `determine_available_memory`; one pod OOMKilled), in run 45969472715.
    Three Guaranteed pods must fit a 15.6 GiB runner node, so the pods now run
-   with `--enforce-eager` (no compile, less memory) and a 4750Mi limit, and,
+   with `--enforce-eager` (no compile, less memory), a 512 MiB KV cache
+   (`--kv-cache-memory-bytes`; about 40,000 tokens, against 2048 per request:
+   in eager mode the three vLLM processes of a pod still reached the limit with
+   1 GiB, run 45971594674) and a 4750Mi limit, and,
    since eager mode pays its warm-up on the first request, the startup probe
    is one real 16-token completion (Ready means warm, as
    vllm-coldstart-operator v0.17.0 does). Identical in v1, v2-good and
