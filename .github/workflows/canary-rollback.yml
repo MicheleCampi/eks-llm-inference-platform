@@ -18,12 +18,18 @@ on:
       - experiments/trace-replay/**
       - .github/workflows/canary-rollback.yml
   workflow_dispatch:
+    inputs:
+      arms:
+        description: "arms to run, comma-separated (a job that landed on a runner without AVX-512 is run again alone)"
+        default: "good-canary,bad-canary,bad-rolling"
 
 permissions:
   contents: read
 
 concurrency:
-  group: canary-rollback-${{ github.ref }}-${{ github.event_name }}
+  # Pull requests: the newest push wins. Dispatches never cancel each other
+  # (one may re-run a single arm while another is measuring).
+  group: canary-rollback-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'pr' }}
   cancel-in-progress: true
 
 env:
@@ -33,6 +39,7 @@ env:
 jobs:
   smoke:
     name: smoke (Rollout, analysis, abort and report on a stub)
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     timeout-minutes: 50
     env:
@@ -96,18 +103,36 @@ jobs:
           kubectl -n argo-rollouts logs deploy/argo-rollouts --tail=80 || true
           $k get events --sort-by=.lastTimestamp | tail -60 || true
 
+  arms:
+    name: arms to run
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - id: pick
+        env:
+          ARMS: ${{ inputs.arms }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          all_ = {"good-canary": ("rollout", "v2-good"), "bad-canary": ("rollout", "v2-bad"),
+                  "bad-rolling": ("deployment", "v2-bad")}
+          want = [a.strip() for a in os.environ["ARMS"].split(",") if a.strip()]
+          assert want and all(a in all_ for a in want), f"unknown arm in {want}"
+          print("include=" + json.dumps([{"arm": a, "kind": all_[a][0], "version": all_[a][1]} for a in want]))
+          PY
+
   run:
     name: ${{ matrix.arm }} (calibration, baseline, arm twice, baseline)
-    if: github.event_name == 'workflow_dispatch'
+    needs: arms
     runs-on: ubuntu-24.04
     timeout-minutes: 200
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - {arm: good-canary, kind: rollout, version: v2-good}
-          - {arm: bad-canary, kind: rollout, version: v2-bad}
-          - {arm: bad-rolling, kind: deployment, version: v2-bad}
+        include: ${{ fromJSON(needs.arms.outputs.include) }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
