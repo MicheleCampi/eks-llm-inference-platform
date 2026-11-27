@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# After terraform destroy: prove nothing billable is left (A-016 list).
+# After terraform destroy: prove nothing billable is left (A-016 list), and
+# nothing that shows the destroy stopped half way (A-026: VPC, ENIs, cluster SG).
 # Exit 0 only if every count is 0. Read-only calls; prints no account id.
 set -uo pipefail
 C="${1:-llm-inference}"; R="${AWS_REGION:-eu-west-1}"; P="eks-llm-inference-platform"
@@ -23,6 +24,12 @@ chk "CloudWatch log groups /aws/eks/$C/" "$(q logs describe-log-groups --log-gro
 # (live attempt 2: Karpenter's instance profile kept the node role alive).
 chk "IAM roles $C*" "$(q iam list-roles --query "length(Roles[?starts_with(RoleName,'$C')])")"
 chk "IAM instance profiles $C* (incl. Karpenter)" "$(q iam list-instance-profiles --query "length(InstanceProfiles[?starts_with(InstanceProfileName,'$C')])")"
+# Not billable either, but a VPC left behind means the destroy did not finish
+# (A-026: an orphan VPC CNI ENI and the EKS-created cluster security group
+# kept a subnet alive; Terraform owns neither). Runbook live.md section 10.
+chk "VPCs Project=$P" "$(q ec2 describe-vpcs --filters Name=tag:Project,Values=$P --query 'length(Vpcs)')"
+chk "VPC CNI ENIs (description aws-K8S-*)" "$(q ec2 describe-network-interfaces --filters 'Name=description,Values=aws-K8S-*' --query 'length(NetworkInterfaces)')"
+chk "Security groups eks-cluster-sg-$C-*" "$(q ec2 describe-security-groups --filters "Name=group-name,Values=eks-cluster-sg-$C-*" --query 'length(SecurityGroups)')"
 # FIS: a running experiment is billed per action-minute; the template is free
 # but belongs to the stack.
 # On an account without FIS (AWS Free Plan: SubscriptionRequiredException)
