@@ -224,6 +224,12 @@ EOF
   k get rollout model -o yaml > "results/$name.rollout.yaml" 2>/dev/null || true
   k get analysisrun -o yaml > "results/$name.analysisrun.yaml" 2>/dev/null || true
   k get events --sort-by=.lastTimestamp > "results/$name.events.txt" 2>/dev/null || true
+  # Restarted model containers (amendment 3): why, when, and the host's OOM
+  # kills, in the job log, since the run's artifacts are not always readable.
+  k get pods -l app=model -o jsonpath='{range .items[*]}{.metadata.name}{" "}{.metadata.labels.version}{" restarts "}{.status.containerStatuses[0].restartCount}{" last "}{.status.containerStatuses[0].lastState.terminated.reason}{" exit "}{.status.containerStatuses[0].lastState.terminated.exitCode}{" at "}{.status.containerStatuses[0].lastState.terminated.finishedAt}{"\n"}{end}' \
+    | awk '$4 > 0' | sed "s/^/rep $name restart: /" | tee -a "$LOG" || true
+  grep -E 'OOMKill|Unhealthy|BackOff|Killing' "results/$name.events.txt" | tail -20 | sed "s/^/rep $name event: /" | tee -a "$LOG" || true
+  sudo dmesg 2>/dev/null | grep -iE 'killed process|memory cgroup out of memory' | tail -10 | sed "s/^/rep $name dmesg: /" | tee -a "$LOG" || true
   # Per pod, per minute: requests and the fraction with TTFT <= T_b, from
   # vLLM's own histogram (README amendment 2), over the replay.
   k delete pod promq --ignore-not-found --wait >/dev/null

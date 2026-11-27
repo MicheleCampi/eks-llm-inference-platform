@@ -166,3 +166,21 @@ A refuted hypothesis is published as refuted.
      failed requests in baselines too (4 and 37, 30 of them connection
      refused, cause not identified): these records are there to find the
      cause, not to exclude requests. Every failed request still counts.
+3. **2026-11-27, after run 2, runner rule and recording only.** In run 2
+   (head `d90d6b7`), job 2 (run 45987679316, Intel Xeon 6975P-C) ran as
+   planned. Job 1 (run 45987792601) landed on an Intel Xeon Platinum 8573C
+   whose VM exposes AVX-512 but not AMX: one request at a time had a TTFT p95
+   of 13.4 s (1.1 s on the 6975P-C), the calibration gave C = 0.094 req/s
+   and T = 26.8 s, and each 20-minute replay held 81 requests. At 0.06 req/s
+   a server that takes one request at a time is not overloaded, so v2-bad
+   was not bad there and the analysis passed it. Job 1 is published in full
+   with its own verdicts. From now on a job on an **Intel runner without
+   AMX** (`amx_tile` absent) stops before the set-up, like a runner without
+   AVX-512, and is run again; job 1 is run again under this rule and that
+   rerun is the second rep. AMD runners are unchanged (run 1's bad-rolling
+   job ran on one). After each rep the job log also lists every restarted
+   model container with its last termination reason, the OOM and probe
+   events, and the host's OOM kills: in run 2, job 2, the v1 pods restarted
+   in both baselines (3 and 2 restarts, 40 and 32 failed requests), and the
+   cause has to be read, not guessed. Hypotheses and thresholds are
+   unchanged.

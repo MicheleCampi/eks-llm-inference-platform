@@ -142,6 +142,8 @@ jobs:
         run: |
           { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
           grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: vLLM CPU did not finish starting on such runners in this set-up (2026-11-26); re-run this job"; exit 1; }
+          # Amendment 3: Intel runners without AMX exposed run bf16 about 10 x slower (run 2, job 1).
+          if grep -q GenuineIntel /proc/cpuinfo && ! grep -q -w amx_tile /proc/cpuinfo; then echo "::error::Intel runner without AMX: excluded by amendment 3; re-run this job"; exit 1; fi
 
       - name: Install kind by SHA-256
         run: |
