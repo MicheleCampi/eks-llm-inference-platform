@@ -43,7 +43,10 @@ def sample():
                           "values": [m.get("value") for mr in a.get("status", {}).get("metricResults", [])
                                      for m in mr.get("measurements", [])],
                           "statuses": [m.get("phase") for mr in a.get("status", {}).get("metricResults", [])
-                                       for m in mr.get("measurements", [])]}
+                                       for m in mr.get("measurements", [])],
+                          "message": a.get("status", {}).get("message"),
+                          "errors": sorted({m["message"] for mr in a.get("status", {}).get("metricResults", [])
+                                            for m in mr.get("measurements", []) if m.get("message")})}
                          for a in runs["items"]]
     else:
         dep = get("deployment", "model")

@@ -24,7 +24,8 @@ spec:
       successCondition: len(result) > 0 && !isNaN(result[0]) && result[0] >= 0.856
       provider:
         prometheus:
-          address: http://prometheus:9090
+          # The controller runs in argo-rollouts: the address must name the namespace.
+          address: http://prometheus.bench.svc.cluster.local:9090
           query: |
             (
               sum(rate(vllm:time_to_first_token_seconds_bucket{hash="{{args.canary-hash}}",le="{{args.le}}"}[2m]))

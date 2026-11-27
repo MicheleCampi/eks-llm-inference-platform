@@ -73,6 +73,19 @@ jobs:
         if: always()
         working-directory: experiments/canary-rollback
         run: python3 report.py results/bad-canary results/good-canary results/bad-rolling | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Mechanics check (good canary analysis Successful and promoted, bad canary analysis Failed and aborted)
+        working-directory: experiments/canary-rollback
+        run: |
+          python3 - <<'PY'
+          import json
+          def last(arm):
+              return [json.loads(l) for l in open(f"results/{arm}/{arm}-1.watch.jsonl")][-1]
+          g, b = last("good-canary"), last("bad-canary")
+          ga, ba = [a["phase"] for a in g["analysis"]], [a["phase"] for a in b["analysis"]]
+          print("good:", ga, g["rollout"], g["versions"]); print("bad:", ba, b["rollout"], b["versions"])
+          assert ga == ["Successful"] and g["versions"].get("v2", {}).get("serving") == 2, "good canary not promoted"
+          assert ba == ["Failed"] and b["rollout"]["abort"] and b["versions"].get("v1", {}).get("serving") == 2, "bad canary not rolled back on a failed analysis"
+          PY
       - name: Cluster state on failure
         if: failure()
         timeout-minutes: 3

@@ -70,7 +70,8 @@ def rep_row(d, meta):
                 back = first(w, ab, lambda s: pods(s, "v2") == 0 and serving(s, "v1") >= 2)
                 row["v1_only_after_ready_s"] = round(back - ready, 1) if back and ready else None
             last = w[-1].get("analysis", [])
-            row["analysis"] = [{"phase": a["phase"], "values": a["values"]} for a in last]
+            row["analysis"] = [{"phase": a["phase"], "values": a["values"], "message": a.get("message"),
+                                "errors": a.get("errors", [])} for a in last]
         full = first(w, t0, lambda s: serving(s, "v2") >= 2 and pods(s, "v1") == 0)
         row["all_v2_s"] = round(full - t0, 1) if full else None
         span_w = [s for s in w if s["t"] >= t0]
@@ -105,7 +106,8 @@ def main():
                   f"{r.get('min_serving', 'n/a')} |")
         for r in rows:
             for a in r.get("analysis", []):
-                print(f"\n- {r['name']} analysis {a['phase']}: {', '.join(str(v) for v in a['values'])}")
+                print(f"\n- {r['name']} analysis {a['phase']}: {', '.join(str(v) for v in a['values'])}"
+                      + (f" ({a['message']}; {'; '.join(a['errors'])})" if a.get("message") or a.get("errors") else ""))
         print()
 
     # Hypotheses
