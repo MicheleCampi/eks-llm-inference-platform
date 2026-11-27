@@ -460,6 +460,14 @@ Known and accepted for this project; each would be closed before production.
   ([evidence](docs/evidence/prefix-routing-2026-11-23.md)). On EKS across
   two zones (live A-025): hit 0.84 against 0.52, TTFT p50 0.43 s against
   1.43 s ([evidence](docs/evidence/live-a025-2026-11-25.md)).
+- SLO under a replayed public Azure LLM trace (2023, conv and code, 20
+  minutes around the busiest minute), on kind at zero cost: at 60 % of
+  measured capacity the bursts break a 99 % SLO in every arm, half of the
+  bad requests in the busiest fifth of the minutes on code. With unique
+  prompts llm-d-router v1.0.0 burned more error budget than the plain
+  Service (conv 914 % against 310 %, code 1140 % against 812 %): the
+  hypothesis that it would burn 25 % less is published as refuted
+  ([evidence](docs/evidence/trace-replay-2026-11-27.md)).
 - Compliance: [docs/compliance-map.md](docs/compliance-map.md) maps SOC 2
   and ISO 27001 controls to evidence in this repository, with the gaps
   (no customer-managed KMS key, one reviewer, no CloudTrail trail; control-plane audit logs on since v2.3.5) and their standard fixes. A map, not a certification.
