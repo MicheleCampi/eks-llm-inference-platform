@@ -44,7 +44,9 @@ class H(BaseHTTPRequestHandler):
             body = ("# TYPE vllm:time_to_first_token_seconds histogram\n" + "\n".join(lines) + "\n").encode()
         else:
             self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
-        self.send_response(200); self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.send_response(200); self.send_header("Content-Length", str(len(body)))
+        # Prometheus 3 refuses a scrape without a Content-Type (vLLM sends this one).
+        self.send_header("Content-Type", "text/plain; version=0.0.4; charset=utf-8"); self.end_headers()
         self.wfile.write(body)
 
     def do_POST(self):

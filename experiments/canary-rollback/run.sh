@@ -129,16 +129,20 @@ tb)
   T=$(python3 -c "import json; print(json.load(open('results/calib-$TRACE.json'))['T'])")
   # Waits (up to 3 min) for the first scrape of the model pods.
   k run promq --restart=Never --image="$LOADGEN_IMAGE" --command -- python3 -c '
-import json, time, urllib.parse as p, urllib.request as u
+import json, sys, time, urllib.parse as p, urllib.request as u
 q = p.urlencode({"match[]": "vllm:time_to_first_token_seconds_bucket"})
 for _ in range(36):
     d = json.load(u.urlopen(f"http://prometheus:9090/api/v1/label/le/values?{q}", timeout=30))["data"]
     if d:
         break
     time.sleep(5)
+else:
+    for t in json.load(u.urlopen("http://prometheus:9090/api/v1/targets", timeout=30))["data"]["activeTargets"]:
+        print("target", t["scrapeUrl"], t["health"], t["lastError"], file=sys.stderr)
 print(json.dumps(d))' >/dev/null
   k wait --for=jsonpath='{.status.phase}'=Succeeded pod/promq --timeout=300s >/dev/null
-  les=$(k logs promq); k delete pod promq --wait >/dev/null
+  k logs promq | grep '^target ' | tee -a "$LOG" || true
+  les=$(k logs promq | grep -v '^target '); k delete pod promq --wait >/dev/null
   python3 - "$T" "$les" > results/tb.json <<'PY'
 import json, sys
 t, les = float(sys.argv[1]), json.loads(sys.argv[2])
