@@ -23,10 +23,11 @@ traffic of `experiments/trace-replay` (ROADMAP step 7):
 ## Set-up
 
 - One kind node on a GitHub-hosted runner (4 CPUs), kubelet with the
-  **static CPU manager policy** and 1 CPU reserved for the system: every
-  vLLM pod is Guaranteed QoS with **1 exclusive core**, so the 2 stable pods
-  and the 1 surge pod of a rollout never share a core. Prometheus, the
-  rollout controller and the replayer share the reserved core.
+  **static CPU manager policy**: every vLLM pod is Guaranteed QoS with
+  **1 exclusive core**, so the 2 stable pods and the 1 surge pod of a
+  rollout never share a core. The policy keeps the fourth core as the shared
+  pool, where the control plane, Prometheus, the rollout controller and the
+  replayer run (they request no CPU, so that 3 exclusive cores fit).
 - vLLM CPU v0.34.0, Qwen2.5-0.5B-Instruct at the pinned commit
   (`../prefix-routing/versions.env`), `--max-model-len 2048`, default KV cache,
   2 replicas behind a ClusterIP Service (kube-proxy). No router: this

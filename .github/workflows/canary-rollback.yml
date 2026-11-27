@@ -1,0 +1,189 @@
+name: canary-rollback
+
+# Canary with automatic rollback on the SLO (Argo Rollouts, Prometheus
+# analysis) against the operator's rolling update, under the replayed Azure
+# trace, on kind, on a GitHub-hosted runner: zero cloud cost. Protocol and
+# hypotheses in experiments/canary-rollback/README.md, tool choice in
+# docs/adr/0003-canary-rollout-tool.md, results in docs/evidence/.
+# On a pull request the smoke test runs the whole chain (static CPU manager,
+# Argo Rollouts, Prometheus, analysis, abort, watcher, report) against a
+# stub server with vLLM's TTFT histogram: mechanics only, no numbers. The
+# measurement with vLLM CPU runs on demand, one job per arm, and does not
+# gate.
+
+on:
+  pull_request:
+    paths:
+      - experiments/canary-rollback/**
+      - experiments/trace-replay/**
+      - .github/workflows/canary-rollback.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: canary-rollback-${{ github.ref }}-${{ github.event_name }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  smoke:
+    name: smoke (Rollout, analysis, abort and report on a stub)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    env:
+      TRIGGER_S: "30"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install kind by SHA-256
+        run: |
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+      - name: kind, Argo Rollouts, Prometheus, analysis
+        run: bash experiments/canary-rollback/run.sh up stub
+      - name: Fixed SLO and a 400 s slice of the conv window (stub values, not a calibration)
+        working-directory: experiments/canary-rollback
+        run: |
+          bash ../trace-replay/run.sh trace
+          python3 ../trace-replay/trace.py thin ../trace-replay/results/window-conv.json 1.5 1 results/s.json
+          python3 -c "import json; s=json.load(open('results/s.json')); s['requests']=[r for r in s['requests'] if r[0]<400]; s['meta']['replay_s']=400; json.dump(s,open('results/schedule-conv.json','w'))"
+          echo '{"trace": "conv", "T": 1.0, "P": 0.2, "C": 0, "rate": 1.5}' > results/calib-conv.json
+          bash run.sh backend rollout stub
+          bash run.sh tb
+      - name: Baseline, bad canary, good canary, bad rolling update
+        working-directory: experiments/canary-rollback
+        run: |
+          keep() { mkdir -p "results/$1"; cp results/calib-conv.json results/tb.json "results/$1/"; mv results/$2.* "results/$1/"; }
+          bash run.sh rep baseline-1 rollout none stub
+          for a in bad-canary good-canary; do mkdir -p results/$a; cp results/baseline-1.* results/$a/; done
+          mkdir -p results/bad-rolling; cp results/baseline-1.* results/bad-rolling/; rm results/baseline-1.*
+          bash run.sh rep bad-canary-1 rollout v2-bad stub; keep bad-canary bad-canary-1
+          bash run.sh rep good-canary-1 rollout v2-good stub; keep good-canary good-canary-1
+          bash run.sh rep bad-rolling-1 deployment v2-bad stub; keep bad-rolling bad-rolling-1
+      - name: Report (mechanics; the stub's numbers mean nothing)
+        if: always()
+        working-directory: experiments/canary-rollback
+        run: python3 report.py results/bad-canary results/good-canary results/bad-rolling | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s -n bench"
+          $k get pods,rollout,analysisrun,rs -o wide || true
+          $k describe analysisrun || true
+          kubectl -n argo-rollouts logs deploy/argo-rollouts --tail=80 || true
+          $k get events --sort-by=.lastTimestamp | tail -60 || true
+
+  run:
+    name: ${{ matrix.arm }} (calibration, baseline, arm twice, baseline)
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 200
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {arm: good-canary, kind: rollout, version: v2-good}
+          - {arm: bad-canary, kind: rollout, version: v2-bad}
+          - {arm: bad-rolling, kind: deployment, version: v2-bad}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner CPU (stop on runners where vLLM CPU did not start)
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512: vLLM CPU did not finish starting on such runners in this set-up (2026-11-26); re-run this job"; exit 1; }
+
+      - name: Install kind by SHA-256
+        run: |
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        run: |
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+
+      - name: Restore the model from the Actions cache
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: kind, Argo Rollouts, Prometheus, analysis
+        run: HF_CACHE=$HOME/hf-cache bash experiments/canary-rollback/run.sh up vllm
+
+      - name: Load the vLLM image into the node
+        run: kind load docker-image vllm-cpu-ci:pinned --name canary-rollback
+
+      - name: v1 model servers
+        run: bash experiments/canary-rollback/run.sh backend ${{ matrix.kind }} vllm
+
+      - name: Calibration on v1 (T and P one at a time, capacity C, analysis bucket)
+        run: bash experiments/canary-rollback/run.sh calibrate
+
+      - name: Baseline 1, arm 1, arm 2, baseline 2
+        run: |
+          r=experiments/canary-rollback/run.sh
+          bash $r rep baseline-1 ${{ matrix.kind }} none vllm
+          bash $r rep ${{ matrix.arm }}-1 ${{ matrix.kind }} ${{ matrix.version }} vllm
+          bash $r rep ${{ matrix.arm }}-2 ${{ matrix.kind }} ${{ matrix.version }} vllm
+          bash $r rep baseline-2 ${{ matrix.kind }} none vllm
+
+      - name: Report
+        if: always()
+        run: |
+          bash experiments/canary-rollback/run.sh report || true
+          cat experiments/canary-rollback/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s -n bench"
+          $k get pods,rollout,deploy,analysisrun,rs -o wide || true
+          $k logs -l app=model --tail=60 || true
+          kubectl -n argo-rollouts logs deploy/argo-rollouts --tail=80 || true
+          $k get events --sort-by=.lastTimestamp | tail -60 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: canary-rollback-${{ matrix.arm }}
+          path: |
+            experiments/canary-rollback/results/*.jsonl
+            experiments/canary-rollback/results/*.json
+            experiments/canary-rollback/results/*.yaml
+            experiments/canary-rollback/results/*.txt
+            experiments/canary-rollback/results/*.log
+            experiments/canary-rollback/results/report.md
+          if-no-files-found: ignore
