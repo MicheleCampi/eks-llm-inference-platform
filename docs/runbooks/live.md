@@ -181,6 +181,15 @@ and stay for the next session; the session's access policy (step 4) is deleted.
     scripts/verify-teardown.sh
 
 Must print TEARDOWN CLEAN; any LEFT line is deleted by hand and the script is
-run again. Then write `docs/evidence/live-<date>.md`: commands, outputs
+run again.
+
+If the destroy fails on a subnet or the VPC with `DependencyViolation`
+(A-026), the usual cause is an ENI of the VPC CNI left `available` for a node
+that is gone (description `aws-K8S-i-...`), plus the cluster security group
+`eks-cluster-sg-llm-inference-*` that EKS creates outside Terraform. Read
+first, delete only those two kinds, then run the destroy again:
+
+    aws --region eu-west-1 ec2 describe-network-interfaces --filters 'Name=description,Values=aws-K8S-*' --query 'NetworkInterfaces[].[NetworkInterfaceId,Status,SubnetId,Description]' --output table
+    aws --region eu-west-1 ec2 describe-security-groups --filters 'Name=group-name,Values=eks-cluster-sg-llm-inference-*' --query 'SecurityGroups[].[GroupId,GroupName,VpcId]' --output table Then write `docs/evidence/live-<date>.md`: commands, outputs
 (account id and IP masked), the alert email (headers only), what passed and
 what did not.
