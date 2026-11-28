@@ -1,0 +1,13 @@
+# Both arms: the chart creates an InferencePool for the pods labelled
+# app=model, so that the EPP starts its InferenceObjective watch (in the
+# chart's selector-only standalone mode it does not, and every request gets
+# the default priority: cmd/epp/runner/runner.go at v1.0.0). Applied after
+# ../prefix-routing/values/router.yaml (resources sized for kind).
+router:
+  inferencePool:
+    create: true
+  modelServers:
+    matchLabels:
+      app: model
+    targetPorts:
+      - number: 8000
