@@ -15,12 +15,13 @@ on:
   pull_request:
     paths:
       - experiments/finops-guardrail/**
+      - experiments/capacity-knee/**
       - experiments/trace-replay/**
       - .github/workflows/finops-guardrail.yml
   workflow_dispatch:
     inputs:
       jobs:
-        description: "jobs to run, comma-separated: 1 = nopolicy, guardrail, guardrail, nopolicy; 2 = the reverse (a job stopped by the runner check is run again alone)"
+        description: "jobs to run, comma-separated: 1 = nopolicy, guardrail, guardrail, nopolicy; 2 = the reverse; 3 and 4 = experiments/capacity-knee (nopolicy, m1-m4 up or down, nopolicy). A job stopped by the runner check is run again alone"
         default: "1,2"
 
 permissions:
@@ -115,7 +116,8 @@ jobs:
         run: |
           python3 - <<'PY' >> "$GITHUB_OUTPUT"
           import json, os
-          order = {"1": "nopolicy guardrail guardrail nopolicy", "2": "guardrail nopolicy nopolicy guardrail"}
+          order = {"1": "nopolicy guardrail guardrail nopolicy", "2": "guardrail nopolicy nopolicy guardrail",
+                   "3": "nopolicy m1 m2 m3 m4 nopolicy", "4": "nopolicy m4 m3 m2 m1 nopolicy"}
           want = [j.strip() for j in os.environ["JOBS"].split(",") if j.strip()]
           assert want and all(j in order for j in want), f"unknown job in {want}"
           print("include=" + json.dumps([{"job": j, "arms": order[j]} for j in want]))
@@ -125,7 +127,7 @@ jobs:
     name: job ${{ matrix.job }} (calibration, ${{ matrix.arms }})
     needs: jobs
     runs-on: ubuntu-24.04
-    timeout-minutes: 200
+    timeout-minutes: 300
     strategy:
       fail-fast: false
       matrix:
@@ -193,14 +195,21 @@ jobs:
           JOB: ${{ matrix.job }}
           ARMS: ${{ matrix.arms }}
         run: |
-          declare -A n=([nopolicy]=0 [guardrail]=0)
+          declare -A n=()
           for a in $ARMS; do
-            n[$a]=$((n[$a] + 1))
-            bash experiments/finops-guardrail/run.sh arm "$a" "$a-$JOB-${n[$a]}"
+            n[$a]=$((${n[$a]:-0} + 1))
+            # mN = the guardrail at maxConcurrency N per replica (experiments/capacity-knee)
+            if [[ $a =~ ^m([0-9])$ ]]; then
+              MAX_CONC=${BASH_REMATCH[1]} bash experiments/finops-guardrail/run.sh arm guardrail "$a-$JOB-${n[$a]}"
+            else
+              bash experiments/finops-guardrail/run.sh arm "$a" "$a-$JOB-${n[$a]}"
+            fi
           done
 
       - name: Report
         if: always()
+        env:
+          KNEE: ${{ (matrix.job == '3' || matrix.job == '4') && '1' || '' }}
         run: |
           bash experiments/finops-guardrail/run.sh report || true
           cat experiments/finops-guardrail/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
@@ -225,5 +234,6 @@ jobs:
             experiments/finops-guardrail/results/*.json
             experiments/finops-guardrail/results/*.log
             experiments/finops-guardrail/results/report.md
+            experiments/finops-guardrail/results/*.yaml
             experiments/trace-replay/results/calib-*
           if-no-files-found: ignore

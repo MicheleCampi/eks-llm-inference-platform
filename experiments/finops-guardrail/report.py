@@ -16,6 +16,7 @@ import sys
 USD_PER_H = 2 * 0.1067
 EUR_PER_USD = float(os.environ.get("EUR_PER_USD", "0.86"))
 BUDGET = {"premium": 0.01, "batch": 0.05}
+KNEE = False
 
 
 def load(path):
@@ -51,7 +52,8 @@ def good(r, tenant, T, P, x):
 def rep_row(jsonl, meta):
     reqs, summary = load(jsonl)
     T, P, x = meta["T"], meta["P"], meta["batch_ttft_x"]
-    row = {"name": meta["name"], "arm": meta["arm"], "wall_s": (summary or {}).get("wall_s"), "tenants": {}}
+    row = {"name": meta["name"], "arm": meta["arm"], "wall_s": (summary or {}).get("wall_s"), "tenants": {},
+           "max_conc": meta.get("max_conc"), "restarts": meta.get("restarts")}
     for tenant in ("premium", "batch"):
         rs = [r for r in reqs if r.get("tenant") == tenant]
         g = [r for r in rs if good(r, tenant, T, P, x)]
@@ -81,7 +83,43 @@ def fmt(x, pct=False):
     return f"{x * 100:.0f} %" if pct else (f"{x:.2f}" if isinstance(x, float) else str(x))
 
 
+def knee(jobs):
+    """experiments/capacity-knee: m*, then H1-H4 against the written rule."""
+    print("## Capacity knee (experiments/capacity-knee)\n")
+    h = {k: [] for k in ("H1", "H2", "H3")}
+    restarts = 0
+    for job, rows in sorted(jobs.items()):
+        gt = lambda r: sum(t["good_tokens"] for t in r["tenants"].values())
+        by_m = {r["max_conc"]: r for r in rows if r.get("max_conc")}
+        nop = [r for r in rows if r["arm"] == "nopolicy"]
+        print(f"### {job}\n")
+        print("| arm | good tokens | EUR per M good tokens | premium budget | batch 429 | restarts |")
+        print("|---|---|---|---|---|---|")
+        for r in nop + [by_m[m] for m in sorted(by_m)]:
+            print(f"| {r['name']} | {gt(r)} | {fmt(r['eur_per_mgood'])} | {fmt(r['tenants']['premium']['budget'], True)} | "
+                  f"{r['tenants']['batch']['classes'].get('429', 0)} | {r.get('restarts', 0)} |")
+        for r in rows:
+            restarts += r.get("restarts") or 0
+        ms = sorted(by_m)
+        if not ms or not nop:
+            continue
+        star = next((m for m in ms if m == ms[-1] or gt(by_m[m + 1]) < 1.05 * gt(by_m[m])), ms[-1])
+        s, en = by_m[star], st.median(r["eur_per_mgood"] for r in nop)
+        pn = st.median(r["tenants"]["premium"]["budget"] for r in nop)
+        print(f"\nm* = {star}\n")
+        h["H1"].append((gt(s) >= 1.2 * gt(by_m[ms[0]]) and star < 4, f"{job}: m* = {star}, good tokens {gt(s)} vs {gt(by_m[ms[0]])} at m{ms[0]} (limit 1.2 x, and m* < 4)"))
+        h["H2"].append((s["eur_per_mgood"] <= 1.1 * en, f"{job}: {s['eur_per_mgood']:.2f} EUR per M good tokens at m* vs {en:.2f} nopolicy (limit 1.1 x)"))
+        h["H3"].append((s["tenants"]["premium"]["budget"] <= 0.5 * pn, f"{job}: premium budget {fmt(s['tenants']['premium']['budget'], True)} at m* vs {fmt(pn, True)} nopolicy (limit half)"))
+    for k, rs in h.items():
+        print(f"- {k} ({'holds' if rs and all(ok for ok, _ in rs) else 'refuted' if rs else 'not evaluated'}): " + "; ".join(t for _, t in rs))
+    print(f"- H4: {restarts} model container restarts; {'not observed' if restarts == 0 else 'see *.last-state.json and *.prev.log per rep'}")
+
+
 def main():
+    if sys.argv[1] == "--knee":
+        del sys.argv[1]
+        global KNEE
+        KNEE = True
     if sys.argv[1] == "--one":
         r = rep_row(sys.argv[2], json.load(open(sys.argv[3])))
         print(json.dumps({"rep": r["name"], "arm": r["arm"], "eur_per_mgood": r["eur_per_mgood"],
@@ -105,6 +143,9 @@ def main():
                 print(f"| {r['name']} | {r['arm']} | {t} | {v['requests']} | {v['good']} | {cl} | {fmt(v['budget'], True)} | "
                       f"{fmt(v['ttft_p95'])} | {fmt(v['queue_ms_p95'])} | {fmt(r['eur_per_mgood'])} |")
         print()
+    if KNEE:
+        knee(jobs)
+        return
     print("## Hypotheses\n")
     h1, h2, h3 = [], [], []
     for job, rows in sorted(jobs.items()):

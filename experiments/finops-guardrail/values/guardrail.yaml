@@ -33,7 +33,7 @@ router:
         - type: concurrency-detector
           parameters:
             concurrencyMode: requests
-            maxConcurrency: 1
+            maxConcurrency: __MAX_CONC__
             headroom: 0.0
         - type: priority-holdback-policy
           name: holdback
