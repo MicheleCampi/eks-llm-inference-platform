@@ -1,0 +1,100 @@
+# One tenant namespace (rendered by run.sh for premium and batch), the
+# pattern of gitops/tenants/demo and gke tenants/b: identity and cost owner
+# on the namespace, ResourceQuota, LimitRange, default-deny ingress, and a
+# Role that reads its own limits but cannot change them or label namespaces.
+# __PREMIUM_POOL__ is "allowed" for tenant-premium only: the admission policy
+# (premium-pool-policy.yaml) lets only such namespaces tolerate pool=premium.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: tenant-__TENANT__
+  labels:
+    platform.michelecampi.dev/team: __TENANT__
+    platform.michelecampi.dev/cost-center: __TENANT__
+    platform.michelecampi.dev/premium-pool: __PREMIUM_POOL__
+    pod-security.kubernetes.io/warn: restricted
+    pod-security.kubernetes.io/audit: restricted
+---
+# Sized for the tenant's client (one replay pod or Job, 200m / 128Mi asked)
+# and the checks of H3; a pod asking 2 CPUs is over it by construction.
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: tenant-__TENANT__
+  namespace: tenant-__TENANT__
+spec:
+  hard:
+    requests.cpu: "1"
+    requests.memory: 2Gi
+    limits.cpu: "2"
+    limits.memory: 4Gi
+    pods: "6"
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: team-defaults
+  namespace: tenant-__TENANT__
+spec:
+  limits:
+    - type: Container
+      defaultRequest: {cpu: 100m, memory: 128Mi}
+      default: {cpu: "1", memory: 1Gi}
+      max: {cpu: "2", memory: 4Gi}
+---
+# Default-deny ingress: no other tenant can reach these pods. Egress stays
+# open: the tenant's client calls the serving namespace, whose own policies
+# (arms/*.yaml) decide which pool it may reach.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-ingress
+  namespace: tenant-__TENANT__
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: tenant-__TENANT__-deployer
+  namespace: tenant-__TENANT__
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: tenant-developer
+  namespace: tenant-__TENANT__
+rules:
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["pods", "pods/log", "events", "services"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["resourcequotas", "limitranges"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["networking.k8s.io"]
+  resources: ["networkpolicies"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["kueue.x-k8s.io"]
+  resources: ["localqueues", "workloads"]
+  verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: tenant-developer
+  namespace: tenant-__TENANT__
+subjects:
+- kind: ServiceAccount
+  name: tenant-__TENANT__-deployer
+  namespace: tenant-__TENANT__
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: tenant-developer

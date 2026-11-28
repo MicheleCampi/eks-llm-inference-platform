@@ -1,0 +1,35 @@
+# Arm shared: one pool. Both tenants reach both replicas (Service model);
+# the serving namespace's own pods (calibration, cache reset) too.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pool-premium-ingress
+  namespace: bench
+spec:
+  podSelector:
+    matchLabels: {app: model, pool: premium}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tenant-premium}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tenant-batch}}
+      ports:
+        - {protocol: TCP, port: 8000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: pool-batch-ingress
+  namespace: bench
+spec:
+  podSelector:
+    matchLabels: {app: model, pool: batch}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tenant-premium}}
+        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: tenant-batch}}
+      ports:
+        - {protocol: TCP, port: 8000}
