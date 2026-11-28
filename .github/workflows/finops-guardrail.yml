@@ -139,10 +139,14 @@ jobs:
           persist-credentials: false
 
       - name: Runner CPU (the rules of experiments/canary-rollback, amendment 3)
+        env:
+          JOB: ${{ matrix.job }}
         run: |
           { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
           grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512; re-run this job"; exit 1; }
           if grep -q GenuineIntel /proc/cpuinfo && ! grep -q -w amx_tile /proc/cpuinfo; then echo "::error::Intel runner without AMX; re-run this job"; exit 1; fi
+          # experiments/capacity-knee amendment 1: the fixed SLO was measured on this CPU
+          if [[ "$JOB" == 5 || "$JOB" == 6 ]] && ! grep -q 'Xeon(R) 6975P-C' /proc/cpuinfo; then echo "::error::jobs 5 and 6 need Intel Xeon 6975P-C (fixed SLO); re-run this job"; exit 1; fi
 
       - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
         run: |

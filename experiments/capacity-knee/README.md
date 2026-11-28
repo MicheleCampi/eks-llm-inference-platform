@@ -116,7 +116,12 @@ Changes, for run 2 only (jobs 5 and 6 of the workflow):
    P = 0.13 s and C = 1.0 req/s, job 4's values, so the replay is
    1.5 req/s in both jobs. An SLO is a contract and does not move with a
    runner. Calibration still runs, and its values are saved as
-   `calib-conv.measured.json` for the record.
+   `calib-conv.measured.json` for the record. The values hold for the CPU
+   they were measured on, so jobs 5 and 6 run only on Intel Xeon 6975P-C;
+   any other runner stops at the runner check, before any measurement.
+   (Added 16:45Z: run 2's first job 5 got an AMD EPYC 9V74, where one
+   request at a time already had a TTFT p95 of 2 s, and calibration
+   stopped. No arm ran.)
 2. **The sweep is `m` = 4, 6, 8, 12.** Job 5 runs
    `nopolicy, m4, m6, m8, m12, nopolicy`; job 6 runs
    `nopolicy, m12, m8, m6, m4, nopolicy`.
