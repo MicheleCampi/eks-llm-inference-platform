@@ -8,7 +8,7 @@ between step 2 and step 9.
 ## 0. Before
 
 - The BUDGET entry of the session confirmed for the release being applied
-  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md); v2.4.2 adds the Session cost allocation tag; v2.4.3 pins operator v0.18.0, which takes pods off the Service when their node shuts down (ADR-0028); the S3' repeat on v2.4.3 is [../gameday/s3-node-shutdown-v2.4.3.md](../gameday/s3-node-shutdown-v2.4.3.md); A-025 ran v2.4.3 and prefix-aware routing on EKS, see [live-a025.md](live-a025.md) and the [evidence](../evidence/live-a025-2026-11-25.md); S3' on v2.4.3 (S3'') was deferred to A-026, together with the keep-alive fix on EKS, see [live-a026.md](live-a026.md); A-026 ran the keep-alive fix on EKS and left S3'' undone for time, so A-027 runs S3'' alone, see [live-a027.md](live-a027.md)).
+  (v2.3.5 ran game day #1 under BUDGET A-019, v2.3.8 the re-run under A-020; v2.4.0 (current versions: Argo CD 3.6.2, ESO 2.15, Alloy 1.16, Karpenter 1.15.3, operator v0.17.0, vLLM CPU v0.34.0) ran under A-021, see [live-a021.md](live-a021.md); v2.4.1 (Kyverno reports RBAC fix, AMI 1.36.5-20261119) ran under A-022, see [live-a022.md](live-a022.md) and the [evidence](../evidence/live-a022-2026-11-22.md); v2.4.2 adds the Session cost allocation tag; v2.4.3 pins operator v0.18.0, which takes pods off the Service when their node shuts down (ADR-0028); the S3' repeat on v2.4.3 is [../gameday/s3-node-shutdown-v2.4.3.md](../gameday/s3-node-shutdown-v2.4.3.md); A-025 ran v2.4.3 and prefix-aware routing on EKS, see [live-a025.md](live-a025.md) and the [evidence](../evidence/live-a025-2026-11-25.md); S3' on v2.4.3 (S3'') was deferred to A-026, together with the keep-alive fix on EKS, see [live-a026.md](live-a026.md); A-026 ran the keep-alive fix on EKS and left S3'' undone for time, so A-027 runs S3'' alone, see [live-a027.md](live-a027.md) and the [evidence](../evidence/live-a027-2026-11-28.md): S3'' held, 0 requests lost).
 - The session's BUDGET id (A-NNN) is the `session` input of apply.yml and
   destroy.yml: every resource gets the tag `Session` with it, and Cost
   Explorer groups the cost by it ([cost-allocation.md](cost-allocation.md)).
@@ -62,7 +62,11 @@ EC2NodeClass carries `Session`:
 
     kubectl get ec2nodeclass -o custom-columns=NAME:.metadata.name,SESSION:.spec.tags.Session
 
-Wait until every Argo CD application is Synced and Healthy.
+Wait until every Argo CD application is Synced and Healthy, **except
+`alloy` and `monitoring`**: they read the Grafana secret of section 4 and
+stay Degraded until it is set, so a wait on them here never ends (A-027 lost
+about 20 minutes to it). Put the secret (section 4) as soon as
+`external-secrets` is Healthy, then wait for all of them.
 
     kubectl -n argocd get applications
 
