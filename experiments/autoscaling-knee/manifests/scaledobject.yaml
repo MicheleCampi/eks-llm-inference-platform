@@ -1,0 +1,34 @@
+# experiments/autoscaling-knee: KEDA scales the model pods between 1 and 2
+# on vLLM's requests in flight (running + waiting), summed over the pods and
+# averaged over 1 minute, so that one burst does not buy a replica (the
+# signal of vllm-coldstart-operator's deploy/examples/keda at v0.18.0).
+# __KIND__ is StatefulSet (vLLM) or Deployment (simulator smoke);
+# __THRESHOLD__ is the arm's target in requests in flight per replica.
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: model
+  namespace: bench
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: __KIND__
+    name: model
+  minReplicaCount: 1
+  maxReplicaCount: 2
+  pollingInterval: 15
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+        scaleDown:
+          stabilizationWindowSeconds: 300
+  triggers:
+    - type: prometheus
+      metadata:
+        serverAddress: http://prometheus.monitoring.svc:9090
+        # Two sums: avg_over_time drops the metric name, so one selector over
+        # both gauges would leave two series per pod with one labelset.
+        query: 'sum(avg_over_time(vllm:num_requests_running[1m])) + sum(avg_over_time(vllm:num_requests_waiting[1m]))'
+        threshold: "__THRESHOLD__"
