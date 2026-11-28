@@ -137,3 +137,21 @@ its good tokens may fall by more than premium gains), H3 and H4 hold.
   quiet and batch cannot use it. That is what H2 prices.
 - Fairness among several batch tenants (Kueue cohorts, borrowing): one
   batch tenant only.
+
+## Amendment 1 (2026-11-28, after the first calibration, before any arm)
+
+Run 46179788377, job 1 (Intel runner, AMX present), stopped in calibration:
+T = 4.3 s and P = 0.12 s one at a time, then the lowest rung of the step 7
+Poisson ladder, 0.25 req/s, broke the SLO (14 requests, 1 bad: TPOT p95
+0.178 s against P = 0.12 s, no failures). With 14 requests one slow
+request decides the rung, and here the cluster has four kind nodes and Kueue
+on the same 4 CPUs, more background than step 7's single node. No arm ran,
+so no result is affected. The change: the ladder starts two rungs lower,
+`0.0625 0.125 0.25 0.5 1 2 4 8` (the step 7 code already takes a ladder,
+as `experiments/canary-rollback` does for 1-core replicas). Everything
+else is unchanged: the calibration rule, LOAD_X, tenants, SLOs, hypotheses
+and thresholds. If C comes out below 0.25 req/s, the replay is still at
+1.5 x C and the evidence states C next to every result. Job 2 of the same
+run never started (runner without AMX, then without AVX-512, re-dispatched
+twice by the step 8 rule), and its last re-dispatch was cancelled so that
+both jobs run this amendment.

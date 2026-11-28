@@ -33,6 +33,7 @@ TENANTS="premium=0.2,batch"
 BATCH_TTFT_X=10
 LOAD_X=1.5               # mean offered rate = 1.5 x C, as finops-guardrail amendment 2
 SEED=20261126            # the step 7 thinning seed
+LADDER=${LADDER:-"0.0625 0.125 0.25 0.5 1 2 4 8"}  # amendment 1: two rungs below the step 7 ladder
 KUEUE_VERSION=v0.20.8    # latest release, read 2026-11-28 (tag commit 31ed51aa)
 KUEUE_URL=https://github.com/kubernetes-sigs/kueue/releases/download/$KUEUE_VERSION/manifests.yaml
 KUEUE_SHA256=ecbc26a9ba2674e1829ed44efb1312c6f8dfa08de96dbbdeb91385535319290a
@@ -199,7 +200,7 @@ backend)
   ;;
 calibrate)
   kubectl apply -f arms/shared.yaml >/dev/null
-  bash "$TR/run.sh" calibrate "$TRACE"
+  LADDER="$LADDER" bash "$TR/run.sh" calibrate "$TRACE"
   C=$(calib C)
   rate=$(python3 -c "print(round($LOAD_X * $C, 4))")
   python3 "$TR/trace.py" thin "$TR/results/window-$TRACE.json" "$rate" "$SEED" "$TR/results/schedule-$TRACE.json" | tee -a "$LOG"
