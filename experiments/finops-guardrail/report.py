@@ -103,11 +103,13 @@ def knee(jobs):
         ms = sorted(by_m)
         if not ms or not nop:
             continue
-        star = next((m for m in ms if m == ms[-1] or gt(by_m[m + 1]) < 1.05 * gt(by_m[m])), ms[-1])
+        # capacity-knee amendment 1: "m + 1" is the next value in the sweep
+        nxt = dict(zip(ms, ms[1:]))
+        star = next((m for m in ms if m == ms[-1] or gt(by_m[nxt[m]]) < 1.05 * gt(by_m[m])), ms[-1])
         s, en = by_m[star], st.median(r["eur_per_mgood"] for r in nop)
         pn = st.median(r["tenants"]["premium"]["budget"] for r in nop)
         print(f"\nm* = {star}\n")
-        h["H1"].append((gt(s) >= 1.2 * gt(by_m[ms[0]]) and star < 4, f"{job}: m* = {star}, good tokens {gt(s)} vs {gt(by_m[ms[0]])} at m{ms[0]} (limit 1.2 x, and m* < 4)"))
+        h["H1"].append((gt(s) >= 1.2 * gt(by_m[ms[0]]) and star < ms[-1], f"{job}: m* = {star}, good tokens {gt(s)} vs {gt(by_m[ms[0]])} at m{ms[0]} (limit 1.2 x, and m* < {ms[-1]})"))
         h["H2"].append((s["eur_per_mgood"] <= 1.1 * en, f"{job}: {s['eur_per_mgood']:.2f} EUR per M good tokens at m* vs {en:.2f} nopolicy (limit 1.1 x)"))
         h["H3"].append((s["tenants"]["premium"]["budget"] <= 0.5 * pn, f"{job}: premium budget {fmt(s['tenants']['premium']['budget'], True)} at m* vs {fmt(pn, True)} nopolicy (limit half)"))
     for k, rs in h.items():

@@ -111,6 +111,18 @@ backend)
   ;;
 calibrate)
   bash "$TR/run.sh" calibrate "$TRACE"
+  # capacity-knee amendment 1: FIXED_SLO="T P C" fixes the SLO and the load;
+  # the measured values are kept for the record.
+  if [ -n "${FIXED_SLO:-}" ]; then
+    cp "$TR/results/calib-$TRACE.json" "$TR/results/calib-$TRACE.measured.json"
+    read -r fT fP fC <<<"$FIXED_SLO"
+    python3 - "$TR/results/calib-$TRACE.json" "$fT" "$fP" "$fC" <<'PY1'
+import json, sys
+c = json.load(open(sys.argv[1])); c.update(T=float(sys.argv[2]), P=float(sys.argv[3]), C=float(sys.argv[4]), fixed=True)
+json.dump(c, open(sys.argv[1], "w"))
+PY1
+    say "calibrate: measured $(cat "$TR/results/calib-$TRACE.measured.json"); fixed T $fT s, P $fP s, C $fC req/s (capacity-knee amendment 1)"
+  fi
   # Amendment 2: the same window, thinned again from the full window to
   # LOAD_X x C with the same seed (time is compressed if LOAD_X x C is above
   # the window's mean rate, as in step 7 amendment 1).

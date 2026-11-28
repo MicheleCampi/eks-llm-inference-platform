@@ -95,3 +95,33 @@ A refuted hypothesis is published as refuted.
 - Token-based capacity (`concurrencyMode: tokens`), which is the next
   candidate if the request count proves too coarse.
 - Zero downtime during a rollout (ROADMAP step 7).
+
+## Amendment 1 (2026-11-28, after run 1, before run 2)
+
+Run 1 (workflow run 46153004325, jobs 3 and 4 of
+`.github/workflows/finops-guardrail.yml`, which are jobs 1 and 2 above)
+is published as it came out in `docs/evidence/capacity-knee-2026-11-28.md`.
+Two things in it stop the rule from reading a knee:
+- **The offered load was not the same in the two jobs.** Both ran on the
+  same CPU (Intel Xeon 6975P-C). Calibration still gave C = 0.375 req/s in
+  job 3 and C = 1.0 req/s in job 4, so job 3 replayed 0.56 req/s and job 4
+  1.5 req/s. One rate step is 30 requests, and 2 misses at 0.5 req/s
+  decided job 3's C. At 0.56 req/s every `m` served the same good tokens,
+  so job 3's m\* = 1 says "no load", not "knee at 1".
+- **The sweep stopped below the knee.** In job 4, good tokens rose by 19 %
+  from `m3` to `m4`, and `m4` was still 8 % below `nopolicy`.
+
+Changes, for run 2 only (jobs 5 and 6 of the workflow):
+1. **The SLO and the load are fixed, not calibrated per job.** T = 0.9 s,
+   P = 0.13 s and C = 1.0 req/s, job 4's values, so the replay is
+   1.5 req/s in both jobs. An SLO is a contract and does not move with a
+   runner. Calibration still runs, and its values are saved as
+   `calib-conv.measured.json` for the record.
+2. **The sweep is `m` = 4, 6, 8, 12.** Job 5 runs
+   `nopolicy, m4, m6, m8, m12, nopolicy`; job 6 runs
+   `nopolicy, m12, m8, m6, m4, nopolicy`.
+3. **The knee rule reads "the next value in the sweep"** in place of
+   `m + 1`, and "or `m` = 12" in place of "or `m` = 4". H1 compares m\*
+   with `m4` and needs m\* < 12. H2 to H4 are unchanged.
+
+Every other rule above is unchanged.
