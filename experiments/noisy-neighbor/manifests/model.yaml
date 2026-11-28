@@ -1,0 +1,83 @@
+# The serving pool, owned by the platform in namespace bench: two vLLM CPU
+# replicas, the same two pods in both arms (README "Arms"). model-premium runs
+# on the premium node (tainted, admission policy) bound to cores 0-1;
+# model-batch on the batch node bound to cores 2-3. On kind the nodes share
+# the host's CPUs, so the core binding is what keeps the two replicas apart,
+# and it is the same in both arms. Flags as ../prefix-routing/manifests/vllm.yaml
+# with the default KV cache and 6 GiB, as ../trace-replay (step 7).
+# run.sh renders __POOL__ and __CORES__ for each replica.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-__POOL__
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector:
+    matchLabels: {app: model, pool: __POOL__}
+  template:
+    metadata:
+      labels: {app: model, pool: __POOL__}
+    spec:
+      nodeSelector: {pool: __POOL__}
+      tolerations:
+        - {key: pool, operator: Equal, value: __POOL__, effect: NoSchedule}
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: vllm
+          image: vllm-cpu-ci:pinned
+          imagePullPolicy: Never
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+          command: ["bash", "-c"]
+          args:
+            - |
+              echo "pool __POOL__ bound to cores $VLLM_CPU_OMP_THREADS_BIND"
+              exec vllm serve "$MODEL" --revision "$MODEL_REVISION" --tokenizer-revision "$MODEL_REVISION" \
+                --port 8000 --dtype bfloat16 --max-model-len 2048 --enable-prefix-caching --block-size 32
+          env:
+            - {name: MODEL, value: __MODEL__}
+            - {name: MODEL_REVISION, value: __MODEL_REVISION__}
+            - {name: VLLM_CPU_OMP_THREADS_BIND, value: "__CORES__"}
+            - {name: HF_HUB_OFFLINE, value: "1"}
+            - {name: VLLM_CPU_KVCACHE_SPACE, value: "1"}
+            - {name: VLLM_CPU_NUM_OF_RESERVED_CPU, value: "0"}
+            - {name: VLLM_SERVER_DEV_MODE, value: "1"}
+            - {name: VLLM_HTTP_TIMEOUT_KEEP_ALIVE, value: "5"}
+            - {name: VLLM_CACHE_ROOT, value: /tmp/vllm}
+            - {name: TRITON_CACHE_DIR, value: /tmp/triton}
+            - {name: XDG_CONFIG_HOME, value: /tmp/config}
+          ports:
+            - {name: http, containerPort: 8000}
+          startupProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+            failureThreshold: 120
+          readinessProbe:
+            httpGet: {path: /health, port: 8000}
+            periodSeconds: 5
+          resources:
+            requests: {cpu: "1", memory: 3Gi}
+            limits: {memory: 6Gi}
+          volumeMounts:
+            - {name: hf, mountPath: /root/.cache/huggingface}
+            - {name: shm, mountPath: /dev/shm}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: hf
+          hostPath: {path: /hf-cache, type: Directory}
+        - name: shm
+          emptyDir: {medium: Memory, sizeLimit: 1Gi}
+        - name: tmp
+          emptyDir: {sizeLimit: 2Gi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-__POOL__
+spec:
+  selector: {app: model, pool: __POOL__}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}

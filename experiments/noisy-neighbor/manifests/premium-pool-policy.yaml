@@ -1,0 +1,53 @@
+# Only namespaces the platform labels platform.michelecampi.dev/premium-pool:
+# allowed may run pods that tolerate the premium pool's taint (pool=premium:
+# NoSchedule). A taint alone keeps pods off by default, but any tenant can add
+# a toleration; this policy is what makes the pool premium-only. A toleration
+# with operator Exists and no key tolerates every taint, so it counts too.
+# Tenants cannot label namespaces (tenant.yaml: their Role has no verb on
+# namespaces). Core API (ValidatingAdmissionPolicy, GA since 1.30), no
+# controller to install; eks enforces the system pool the same way with
+# Kyverno (gitops/policies/restrict-system-pool.yaml).
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: premium-pool-tenants-only
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: ["v1"]
+        operations: ["CREATE", "UPDATE"]
+        resources: ["pods"]
+  variables:
+    - name: toleratesPremium
+      expression: >-
+        has(object.spec.tolerations) && object.spec.tolerations.exists(t,
+          (!has(t.key) || t.key == '')
+            ? (has(t.operator) && t.operator == 'Exists')
+            : (t.key == 'pool' && ((has(t.operator) && t.operator == 'Exists') || (has(t.value) && t.value == 'premium'))))
+    - name: namespaceAllowed
+      expression: >-
+        has(namespaceObject.metadata.labels) &&
+        'platform.michelecampi.dev/premium-pool' in namespaceObject.metadata.labels &&
+        namespaceObject.metadata.labels['platform.michelecampi.dev/premium-pool'] == 'allowed'
+  validations:
+    - expression: "!variables.toleratesPremium || variables.namespaceAllowed"
+      message: "only namespaces labelled platform.michelecampi.dev/premium-pool=allowed may tolerate the premium pool (pool=premium)"
+      reason: Forbidden
+---
+# System namespaces run DaemonSets that tolerate every taint (kindnet); they
+# are not tenants.
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: premium-pool-tenants-only
+spec:
+  policyName: premium-pool-tenants-only
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchExpressions:
+        - key: kubernetes.io/metadata.name
+          operator: NotIn
+          values: [kube-system, kube-public, kube-node-lease, local-path-storage, kueue-system]

@@ -1,0 +1,242 @@
+name: noisy-neighbor
+
+# Noisy neighbor (ROADMAP step 7b): a separate premium pool against a shared
+# pool under the replayed Azure trace, with the tenancy guardrails
+# (NetworkPolicy, ResourceQuota, taint, ValidatingAdmissionPolicy) and Kueue
+# for the batch tenant's Jobs checked by requests that must be refused, on
+# kind, on a GitHub-hosted runner: zero cloud cost. Protocol and hypotheses
+# in experiments/noisy-neighbor/README.md, results in docs/evidence/.
+# On a pull request the smoke test runs the whole chain (pools, tenants,
+# policies, Kueue, both arms, report) against the llm-d inference simulator:
+# mechanics only, no numbers. The measurement with vLLM CPU runs on demand,
+# two jobs in opposite arm orders, and does not gate.
+
+on:
+  pull_request:
+    paths:
+      - experiments/noisy-neighbor/**
+      - experiments/trace-replay/**
+      - experiments/finops-guardrail/report.py
+      - .github/workflows/noisy-neighbor.yml
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "jobs to run, comma-separated: 1 = shared, isolated, isolated, shared; 2 = the reverse (a job stopped by the runner check is run again alone)"
+        default: "1,2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: noisy-neighbor-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'pr' }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  smoke:
+    name: smoke (pools, tenants, guardrail checks, Kueue, both arms on the simulator)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+      - name: kind with three pools, tenants, admission policy, Kueue; simulator in both pools
+        run: |
+          bash experiments/noisy-neighbor/run.sh up
+          bash experiments/noisy-neighbor/run.sh backend sim
+      - name: Guardrail checks (H3, H4)
+        run: bash experiments/noisy-neighbor/run.sh checks
+      - name: The busiest 240 s of the conv window at 4 req/s mean (stub values, not a calibration)
+        working-directory: experiments/trace-replay
+        run: |
+          python3 trace.py thin results/window-conv.json 4 1 results/s.json
+          python3 -c "import json; s=json.load(open('results/s.json')); s['requests']=[r for r in s['requests'] if 480 <= r[0] < 720]; [r.__setitem__(0, r[0] - 480) for r in s['requests']]; s['meta']['replay_s']=240; json.dump(s,open('results/schedule-conv.json','w'))"
+          echo '{"trace": "conv", "T": 1.0, "P": 0.1, "C": 0, "rate": 4}' > results/calib-conv.json
+      - name: shared, then isolated
+        env:
+          MODEL_NAME: sim-qwen2.5-0.5b
+        run: |
+          bash experiments/noisy-neighbor/run.sh arm shared shared-1
+          bash experiments/noisy-neighbor/run.sh arm isolated isolated-1
+      - name: Report (mechanics; the simulator's numbers mean nothing)
+        if: always()
+        run: bash experiments/noisy-neighbor/run.sh report | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Mechanics check (every guardrail check passes; both tenants served in both arms, nothing but 200)
+        working-directory: experiments/noisy-neighbor
+        run: |
+          python3 - <<'PY'
+          import json
+          cks = [json.loads(l) for l in open("results/checks.jsonl")]
+          print(cks)
+          assert sorted(c["check"] for c in cks) == ["H3a-netpol", "H3b-quota", "H3c-taint", "H3d-admission", "H4-kueue"], cks
+          assert all(c["ok"] for c in cks), [c for c in cks if not c["ok"]]
+          for name in ("shared-1", "isolated-1"):
+              out = {}
+              for l in open(f"results/{name}.jsonl"):
+                  if l.startswith('{"req"'):
+                      r = json.loads(l)["req"]
+                      out[(r["tenant"], r["code"])] = out.get((r["tenant"], r["code"]), 0) + 1
+              print(name, out)
+              assert out.get(("premium", 200)) and out.get(("batch", 200)), f"{name}: a tenant got no answer"
+              assert all(c == 200 for (_, c) in out), f"{name}: a request was not answered with 200"
+          PY
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s"
+          $k get nodes -L pool || true
+          $k get pods -A -o wide | grep -v kube-system || true
+          $k -n tenant-batch get jobs,workloads -o wide || true
+          $k get events -A --sort-by=.lastTimestamp | tail -60 || true
+
+  jobs:
+    name: jobs to run
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - id: pick
+        env:
+          JOBS: ${{ inputs.jobs }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          order = {"1": "shared isolated isolated shared", "2": "isolated shared shared isolated"}
+          want = [j.strip() for j in os.environ["JOBS"].split(",") if j.strip()]
+          assert want and all(j in order for j in want), f"unknown job in {want}"
+          print("include=" + json.dumps([{"job": j, "arms": order[j]} for j in want]))
+          PY
+
+  run:
+    name: job ${{ matrix.job }} (calibration, checks, ${{ matrix.arms }})
+    needs: jobs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.jobs.outputs.include) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner CPU (the rules of experiments/canary-rollback, amendment 3)
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q -w avx512f /proc/cpuinfo || { echo "::error::runner without AVX-512; re-run this job"; exit 1; }
+          if grep -q GenuineIntel /proc/cpuinfo && ! grep -q -w amx_tile /proc/cpuinfo; then echo "::error::Intel runner without AMX; re-run this job"; exit 1; fi
+
+      - name: Free disk (the vLLM image is loaded into two kind nodes)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h / | tail -1
+
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        run: |
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+
+      - name: Restore the model from the Actions cache
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: kind with three pools, tenants, admission policy, Kueue
+        run: HF_CACHE=$HOME/hf-cache bash experiments/noisy-neighbor/run.sh up
+
+      - name: Load the vLLM image into the two model nodes
+        run: bash experiments/noisy-neighbor/run.sh load
+
+      - name: Model servers (model-premium, model-batch)
+        run: bash experiments/noisy-neighbor/run.sh backend vllm
+
+      - name: Calibration (step 7 code and rules, both replicas)
+        run: bash experiments/noisy-neighbor/run.sh calibrate
+
+      - name: Guardrail checks (H3, H4)
+        run: bash experiments/noisy-neighbor/run.sh checks
+
+      - name: Arms in this job's order
+        env:
+          JOB: ${{ matrix.job }}
+          ARMS: ${{ matrix.arms }}
+        run: |
+          declare -A n=([shared]=0 [isolated]=0)
+          for a in $ARMS; do
+            n[$a]=$((n[$a] + 1))
+            bash experiments/noisy-neighbor/run.sh arm "$a" "$a-$JOB-${n[$a]}"
+          done
+
+      - name: Report
+        if: always()
+        run: |
+          bash experiments/noisy-neighbor/run.sh report || true
+          cat experiments/noisy-neighbor/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+          cat experiments/noisy-neighbor/results/run.log || true
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s"
+          $k get nodes -L pool || true
+          $k get pods -A -o wide | grep -v kube-system || true
+          $k -n bench logs -l app=model --tail=60 || true
+          $k -n tenant-batch get jobs,workloads -o wide || true
+          $k get events -A --sort-by=.lastTimestamp | tail -60 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: noisy-neighbor-job-${{ matrix.job }}
+          path: |
+            experiments/noisy-neighbor/results/*.jsonl
+            experiments/noisy-neighbor/results/*.json
+            experiments/noisy-neighbor/results/*.log
+            experiments/noisy-neighbor/results/report.md
+            experiments/trace-replay/results/calib-*
+          if-no-files-found: ignore

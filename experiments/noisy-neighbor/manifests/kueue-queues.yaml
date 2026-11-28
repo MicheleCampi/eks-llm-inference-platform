@@ -1,0 +1,32 @@
+# The batch tenant's queue. The ClusterQueue's CPU quota fits one replay
+# client (200m asked) and not two, so a second batch Job waits for the first
+# (H4). Kueue manages the batch tenant's Jobs (its offline inference client),
+# not the Deployments that serve the model (README "Standard first").
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ResourceFlavor
+metadata:
+  name: default
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: ClusterQueue
+metadata:
+  name: batch
+spec:
+  namespaceSelector:
+    matchLabels:
+      kubernetes.io/metadata.name: tenant-batch
+  resourceGroups:
+    - coveredResources: ["cpu", "memory"]
+      flavors:
+        - name: default
+          resources:
+            - {name: cpu, nominalQuota: 300m}
+            - {name: memory, nominalQuota: 512Mi}
+---
+apiVersion: kueue.x-k8s.io/v1beta2
+kind: LocalQueue
+metadata:
+  name: batch
+  namespace: tenant-batch
+spec:
+  clusterQueue: batch

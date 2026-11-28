@@ -1,0 +1,47 @@
+# Smoke test only: llm-d-inference-sim standing in for vLLM in the same two
+# pools (mechanics: placement, Services, policies, Kueue, report). It decodes
+# slowly and takes 2 requests at a time, so a burst queues. Its numbers mean
+# nothing. run.sh renders __POOL__ and SIM_IMAGE.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: model-__POOL__
+spec:
+  replicas: 1
+  selector:
+    matchLabels: {app: model, pool: __POOL__}
+  template:
+    metadata:
+      labels: {app: model, pool: __POOL__}
+    spec:
+      nodeSelector: {pool: __POOL__}
+      tolerations:
+        - {key: pool, operator: Equal, value: __POOL__, effect: NoSchedule}
+      securityContext:
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: sim
+          image: SIM_IMAGE
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          args: [--model, sim-qwen2.5-0.5b, --port, "8000", --max-num-seqs, "2", --max-model-len, "4096",
+                 --prefill-overhead, 5ms, --prefill-time-per-token, 200us, --inter-token-latency, 40ms]
+          ports:
+            - {name: http, containerPort: 8000}
+          readinessProbe:
+            httpGet: {path: /health/ready, port: 8000}
+            periodSeconds: 2
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {memory: 512Mi}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: model-__POOL__
+spec:
+  selector: {app: model, pool: __POOL__}
+  ports:
+    - {name: http, port: 8000, targetPort: 8000}

@@ -24,6 +24,12 @@ from the prompts) and sends it in `x-llm-d-inference-objective`; the tenant
 and the router's `x-llm-d-flow-queue-duration-ms` response header are
 recorded. Without the flag nothing changes.
 
+--only-tenant NAME and --start-at EPOCH (noisy-neighbor): one client per
+tenant, each in its own namespace, replaying the same schedule with the same
+tenant assignment; this client sends only NAME's requests (the others are
+skipped, not counted) and its clock starts at the wall-clock second EPOCH, so
+that the clients of the tenants start together. Without them nothing changes.
+
 Output: one JSON line per request ("req") and one summary ("summary").
 """
 import argparse
@@ -140,6 +146,8 @@ def main():
     ap.add_argument("--seed", type=int, default=20261126)
     ap.add_argument("--workers", type=int, default=512)
     ap.add_argument("--tenants", default="")
+    ap.add_argument("--only-tenant", default="")
+    ap.add_argument("--start-at", type=float, default=0)
     a = ap.parse_args()
     rnd = random.Random(a.seed)
 
@@ -188,6 +196,8 @@ def main():
             rows.append(r)
             print(json.dumps({"req": r}), flush=True)
 
+    if a.start_at:
+        time.sleep(max(0.0, a.start_at - time.time()))
     t0 = time.perf_counter()
     if mode == "closed":
         for i, (_, c, g) in enumerate(plan):
@@ -195,6 +205,8 @@ def main():
     else:
         with cf.ThreadPoolExecutor(a.workers) as ex:
             for i, (off, c, g) in enumerate(plan):
+                if a.only_tenant and tenants[i] != a.only_tenant:
+                    continue
                 d = off - (time.perf_counter() - t0)
                 if d > 0:
                     time.sleep(d)
