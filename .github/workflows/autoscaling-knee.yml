@@ -1,0 +1,230 @@
+name: autoscaling-knee
+
+# Autoscaling at the measured capacity (ROADMAP step 6b): KEDA on vLLM's
+# requests in flight, with the threshold at the knee of D-0181 or at
+# Little's law measured in the job, against a pool sized for the peak, under
+# a step load built from the Azure trace, on kind, on a GitHub-hosted
+# runner: zero cloud cost. Protocol and hypotheses in
+# experiments/autoscaling-knee/README.md, results in docs/evidence/.
+# On a pull request the smoke test runs the chain (Prometheus, KEDA, the
+# HPA, the sampler, the L rule, the report) against the llm-d inference
+# simulator: mechanics only, no numbers. The measurement with vLLM CPU runs
+# on demand, two jobs in opposite arm orders, and does not gate.
+
+on:
+  pull_request:
+    paths:
+      - experiments/autoscaling-knee/**
+      - .github/workflows/autoscaling-knee.yml
+  workflow_dispatch:
+    inputs:
+      jobs:
+        description: "jobs to run, comma-separated: 1 = static2, knee, little; 2 = little, knee, static2. A job stopped by the runner check is run again alone"
+        default: "1,2"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: autoscaling-knee-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && github.run_id || 'pr' }}
+  cancel-in-progress: true
+
+env:
+  KIND_VERSION: v0.33.0
+  KIND_SHA256: aee6151561422756b764a4ae28e7f44cda5af5a9eead3cc9985112b1de8d8e0d
+
+jobs:
+  smoke:
+    name: smoke (Prometheus, KEDA, HPA, sampler and report on the simulator)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+      - name: kind, CRDs, simulator, Prometheus, KEDA
+        run: |
+          bash experiments/autoscaling-knee/run.sh up
+          bash experiments/autoscaling-knee/run.sh backend sim
+          bash experiments/autoscaling-knee/run.sh monitoring
+      - name: Step load, then 240 s of the window at 8 req/s in its place (stub load, not the protocol's)
+        working-directory: experiments/autoscaling-knee
+        run: |
+          bash run.sh schedule
+          python3 ../trace-replay/trace.py thin ../trace-replay/results/window-conv.json 8 1 results/s.json
+          python3 -c "import json; s=json.load(open('results/s.json')); s['requests']=[[r[0]-480,r[1],r[2]] for r in s['requests'] if 480 <= r[0] < 720]; s['meta']['replay_s']=240; json.dump(s,open('results/in/schedule.json','w'))"
+      - name: L rule, knee at a threshold of 1, static2
+        env:
+          MODEL_NAME: sim-qwen2.5-0.5b
+        run: |
+          bash experiments/autoscaling-knee/run.sh little
+          THRESHOLD=1 bash experiments/autoscaling-knee/run.sh arm knee knee-smoke
+          bash experiments/autoscaling-knee/run.sh arm static2 static2-smoke
+      - name: Report (mechanics; the simulator's numbers mean nothing)
+        if: always()
+        run: bash experiments/autoscaling-knee/run.sh report | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Mechanics check (the HPA asked for 2 and got 2 Ready; the static pool stayed at 2)
+        working-directory: experiments/autoscaling-knee
+        run: |
+          python3 - <<'PY'
+          import json
+          def samples(name):
+              return [l.split() for l in open(f"results/{name}.samples") if len(l.split()) >= 3]
+          k, s = samples("knee-smoke"), samples("static2-smoke")
+          assert any(x[3] == "2" for x in k if len(x) > 3), "the HPA never asked for 2 replicas"
+          assert any(x[2] == "2" for x in k), "the second replica never became Ready"
+          assert all(x[1] == "2" for x in s), "the static pool did not stay at 2"
+          L = json.load(open("results/little.json"))["L"]
+          assert L > 0, L
+          print("knee-smoke: desired 2 and 2 Ready seen; static2: 2 throughout; L =", L)
+          PY
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s"
+          $k -n bench get pods,hpa,scaledobject -o wide || true
+          $k -n bench describe hpa || true
+          $k -n keda logs deploy/keda-operator --tail=120 || true
+          $k -n bench get events --sort-by=.lastTimestamp | tail -40 || true
+
+  jobs:
+    name: jobs to run
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 2
+    outputs:
+      include: ${{ steps.pick.outputs.include }}
+    steps:
+      - id: pick
+        env:
+          JOBS: ${{ inputs.jobs }}
+        run: |
+          python3 - <<'PY' >> "$GITHUB_OUTPUT"
+          import json, os
+          order = {"1": "static2 knee little", "2": "little knee static2"}
+          want = [j.strip() for j in os.environ["JOBS"].split(",") if j.strip()]
+          assert want and all(j in order for j in want), f"unknown job in {want}"
+          print("include=" + json.dumps([{"job": j, "arms": order[j]} for j in want]))
+          PY
+
+  run:
+    name: job ${{ matrix.job }} (${{ matrix.arms }})
+    needs: jobs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJSON(needs.jobs.outputs.include) }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Runner CPU (the SLO of D-0181 was measured on Intel Xeon 6975P-C)
+        run: |
+          { lscpu | grep -E '^(Model name|CPU\(s\)):'; echo "ISA: $(grep -o -w -E 'avx512f|amx_tile' /proc/cpuinfo | sort -u | tr '\n' ' ')"; } | tee -a "$GITHUB_STEP_SUMMARY"
+          grep -q 'Xeon(R) 6975P-C' /proc/cpuinfo || { echo "::error::this experiment needs Intel Xeon 6975P-C (fixed SLO); re-run this job"; exit 1; }
+          grep -q -w amx_tile /proc/cpuinfo || { echo "::error::Intel runner without AMX; re-run this job"; exit 1; }
+
+      - name: Install pinned tools (helm from inference-platform-ci; kind by SHA-256)
+        run: |
+          bash ci/install-tools.sh > /dev/null
+          echo "$PWD/.ci-bin" >> "$GITHUB_PATH"
+          curl -fsSLo /tmp/kind "https://github.com/kubernetes-sigs/kind/releases/download/$KIND_VERSION/kind-linux-amd64"
+          echo "$KIND_SHA256  /tmp/kind" | sha256sum -c -
+          sudo install /tmp/kind /usr/local/bin/kind
+
+      - name: Pins from versions.env into the job environment
+        run: grep -E '^[A-Z_]+=' experiments/prefix-routing/versions.env >> "$GITHUB_ENV"
+
+      - name: Pull the vLLM CPU image from the project's public mirror (same digest as upstream)
+        run: |
+          for i in 1 2 3; do docker pull -q "$VLLM_CPU_IMAGE" && break; sleep $((30 * i)); done
+          docker tag "$VLLM_CPU_IMAGE" vllm-cpu-ci:pinned
+
+      - name: Restore the model from the Actions cache
+        id: model-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/hf-cache
+          key: hf-qwen2.5-0.5b-instruct-${{ env.MODEL_REVISION }}
+
+      - name: Fetch the model at the pinned commit, with the vLLM image's own client
+        if: steps.model-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/hf-cache
+          for i in 1 2 3; do
+            timeout 600 docker run --rm -v "$HOME/hf-cache:/root/.cache/huggingface" \
+              -e HF_HUB_DOWNLOAD_TIMEOUT=30 -e HF_HUB_ETAG_TIMEOUT=15 --entrypoint python3 vllm-cpu-ci:pinned -c \
+              "from huggingface_hub import snapshot_download as s; print(s('$MODEL', revision='$MODEL_REVISION', allow_patterns=['*.json','*.safetensors','*.txt','tokenizer*']))" && exit 0
+            sleep $((30 * i))
+          done
+          exit 1
+
+      - name: kind, CRDs
+        run: HF_CACHE=$HOME/hf-cache bash experiments/autoscaling-knee/run.sh up
+
+      - name: Load the vLLM image into the node
+        run: kind load docker-image vllm-cpu-ci:pinned --name trace-replay
+
+      - name: Model servers, Prometheus, KEDA, step load
+        run: |
+          bash experiments/autoscaling-knee/run.sh backend vllm
+          bash experiments/autoscaling-knee/run.sh monitoring
+          bash experiments/autoscaling-knee/run.sh schedule
+
+      - name: L by the README rule
+        run: bash experiments/autoscaling-knee/run.sh little
+
+      - name: Arms in this job's order
+        env:
+          JOB: ${{ matrix.job }}
+          ARMS: ${{ matrix.arms }}
+        run: |
+          for a in $ARMS; do
+            bash experiments/autoscaling-knee/run.sh arm "$a" "$a-$JOB"
+          done
+
+      - name: Report
+        if: always()
+        run: |
+          bash experiments/autoscaling-knee/run.sh report || true
+          cat experiments/autoscaling-knee/results/report.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - name: Cluster state on failure
+        if: failure()
+        timeout-minutes: 3
+        run: |
+          k="kubectl --request-timeout=20s"
+          $k -n bench get pods,hpa,scaledobject -o wide || true
+          $k -n bench logs -l app=model --tail=60 || true
+          $k -n keda logs deploy/keda-operator --tail=120 || true
+          $k -n bench get events --sort-by=.lastTimestamp | tail -60 || true
+
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: autoscaling-knee-job-${{ matrix.job }}
+          path: |
+            experiments/autoscaling-knee/results/*.jsonl
+            experiments/autoscaling-knee/results/*.json
+            experiments/autoscaling-knee/results/*.samples
+            experiments/autoscaling-knee/results/*.txt
+            experiments/autoscaling-knee/results/*.log
+            experiments/autoscaling-knee/results/*.yaml
+            experiments/autoscaling-knee/results/report.md
+            experiments/autoscaling-knee/results/in/
+          if-no-files-found: ignore
