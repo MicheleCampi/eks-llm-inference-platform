@@ -2,7 +2,8 @@
 
 Protocol and hypotheses: [`experiments/capacity-knee/README.md`](../../experiments/capacity-knee/README.md),
 written before any run. Amendment 1 came after run 1. Workflow:
-`.github/workflows/finops-guardrail.yml`, jobs 3 and 4. Cost: 0
+`.github/workflows/finops-guardrail.yml`, jobs 3 and 4 (run 1) and 5 and 6
+(run 2, amendment 1). Cost: 0
 (GitHub-hosted runners, no AWS resources).
 
 ## Run 1
@@ -73,7 +74,72 @@ replica. That number is not a knee, for the reasons below.
    this load. H4 stays open, and the capture (last state and previous log)
    is in place for the next one.
 
+## Run 2 (amendment 1: fixed SLO, sweep 4 to 12)
+
+Jobs 5 and 6, both on Intel Xeon 6975P-C, with T = 0.9 s, P = 0.13 s and
+C = 1.0 req/s fixed, so 1.5 req/s and 560 / 1244 requests per rep in both:
+- job 6: [46165471436](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/46165471436), head `95c7c18`;
+- job 5: [46166478792](https://github.com/MicheleCampi/eks-llm-inference-platform/actions/runs/46166478792), head `2572403`. Its first try in 46165471436 got an AMD EPYC 9V74 and stopped in calibration, before any arm. 2572403 adds only the runner check that pins jobs 5 and 6 to this CPU.
+
+Calibration still ran for the record, and gave C = 0.5 req/s in both jobs
+(T = 0.7 s). On one CPU model it has now given 0.375, 1.0, 0.5 and 0.5.
+
+| Job | Arm | Good tokens | EUR per M good tokens | Premium budget | Batch 429 | Batch queue p95 | Restarts |
+|---|---|---|---|---|---|---|---|
+| 5 | nopolicy 1 / 2 | 32169 / 32472 | 1.91 / 1.89 | 3893 % / 3821 % | 0 | n/a | 0 |
+| 5 | m4 | 29913 | 2.06 | 3821 % | 77 | 8.8 s | 0 |
+| 5 | **m6** | **32685** | **1.88** | 3536 % | 0 | 3.2 s | 0 |
+| 5 | m8 | 33131 | 1.86 | 3429 % | 0 | 0.6 s | 0 |
+| 5 | m12 | 31088 | 1.98 | 4518 % | 0 | 0 s | 0 |
+| 6 | nopolicy 1 / 2 | 32906 / 33013 | 1.87 / 1.86 | 3411 % / 3250 % | 0 | n/a | 0 |
+| 6 | **m4** | **31833** | **1.93** | 2911 % | 44 | 8.0 s | 0 |
+| 6 | m6 | 32850 | 1.87 | 3321 % | 0 | 2.7 s | 0 |
+| 6 | m8 | 32137 | 1.91 | 3893 % | 0 | 0.8 s | 0 |
+| 6 | m12 | 31682 | 1.94 | 4143 % | 0 | 0 s | 0 |
+
+### Hypotheses, by the amended rule
+
+| # | Job 5 | Job 6 | Verdict |
+|---|---|---|---|
+| H1 a knee, >= 1.2 x m4 and m\* < 12 | m\* = 6 (m4 to m6 +9.3 %, m6 to m8 +1.4 %), 1.09 x m4 | m\* = 4 (m4 to m6 +3.2 %) | **refuted** |
+| H2 EUR at m\* <= 1.1 x nopolicy | 1.88 vs 1.90 (0.99 x) | 1.93 vs 1.87 (1.03 x) | holds |
+| H3 premium budget at m\* <= half of nopolicy | 3536 % vs 3857 % | 2911 % vs 3330 % | **refuted** |
+| H4 restarts on record | 0 | 0 | not observed |
+
+The rule declares the smaller m\*: **4 requests per replica**.
+
+## What the two runs say together
+
+1. **The knee is between 4 and 6 requests per replica** for Qwen2.5-0.5B
+   on 2 cores at this SLO. Read across both runs on one CPU and one fixed
+   load: good tokens were 11882 at m1 (run 1, job 4), about 30000 to 32000
+   at m4, and level from m6 up (32685 and 32850, against a nopolicy median
+   of 32320 and 32960). H1 as written is refuted: run 1's sweep stopped
+   below the knee, and the amended H1 measures from m4, which is already
+   near it. The amended H1 was badly chosen, and it stays as written.
+2. **At the declared capacity the guardrail costs nothing.** H2 held in
+   all four jobs. At m4 it cost 1.03 to 1.09 x the nopolicy median and
+   shed 3 to 6 % of batch with 429. From m6 up it cost 0.98 to 1.04 x and
+   shed nothing. The 1.71 x of D-0176 came from declaring 1 request per
+   replica.
+3. **The capacity cannot be read off a short calibration.** The same CPU
+   model gave C = 0.375, 0.5, 0.5 and 1.0 req/s. A declared capacity has to
+   come from a sweep at a fixed SLO and a fixed load, as here, and has to
+   be measured again for each model and each hardware.
+4. **Router admission does not protect premium on this pool.** H3 was
+   refuted in all four jobs. Premium TTFT p95 was about 1 s in every arm
+   at or above m4, against 0.9 s, whether batch waited in the router
+   (m4, queue p95 8 to 9 s) or not (m12). The misses come from requests
+   that are already inside the engine. Holding batch back only helps when
+   the cap is so low that it throws away throughput (m2 in run 1: premium
+   budget down a third, at 1.64 x the cost). Protecting premium needs
+   priority inside the engine, or a separate pool, and not a gate in
+   front of the engine.
+5. **No restarts in 24 reps.** The D-0174 restarts did not appear at this
+   load. H4 stays "not observed", and the capture is in place.
+
 ## What this does not show
 
 The protocol's list: one model on 2 CPU cores, no GPU, request-count
-capacity only. One rep per `m` and job gives a direction, not an interval.
+capacity only. One rep per `m` and job gives a direction, not an interval. Run 1 and
+run 2 are compared only where the CPU, SLO and load match (run 1, job 4).
