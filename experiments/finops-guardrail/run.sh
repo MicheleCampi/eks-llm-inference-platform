@@ -42,6 +42,7 @@ GIE_CRD_SHA256=f410dfca474608c02903087b47f1ac081706dfb6dfe7f83d00a7cc7e00c4ad0d
 IO_CRD_URL=https://raw.githubusercontent.com/llm-d/llm-d-router/v1.0.0/config/crd/bases/llm-d.ai_inferenceobjectives.yaml
 IO_CRD_SHA256=ff12ac55b79a8db719be4da2082b02cbf9b35e482cf20c040c9304f766beeaf4
 
+restarts() { k get pods -l app=model -o jsonpath='{range .items[*]}{.status.containerStatuses[0].restartCount}{"\n"}{end}' | awk '{s += $1} END {print s + 0}'; }
 calib() { python3 -c "import json; c=json.load(open('$TR/results/calib-$TRACE.json')); print(c['$1'])"; }
 
 # replay NAME OUT ARGS...: the step 7 replayer in a pod (as ../trace-replay).
@@ -110,6 +111,18 @@ backend)
   ;;
 calibrate)
   bash "$TR/run.sh" calibrate "$TRACE"
+  # capacity-knee amendment 1: FIXED_SLO="T P C" fixes the SLO and the load;
+  # the measured values are kept for the record.
+  if [ -n "${FIXED_SLO:-}" ]; then
+    cp "$TR/results/calib-$TRACE.json" "$TR/results/calib-$TRACE.measured.json"
+    read -r fT fP fC <<<"$FIXED_SLO"
+    python3 - "$TR/results/calib-$TRACE.json" "$fT" "$fP" "$fC" <<'PY1'
+import json, sys
+c = json.load(open(sys.argv[1])); c.update(T=float(sys.argv[2]), P=float(sys.argv[3]), C=float(sys.argv[4]), fixed=True)
+json.dump(c, open(sys.argv[1], "w"))
+PY1
+    say "calibrate: measured $(cat "$TR/results/calib-$TRACE.measured.json"); fixed T $fT s, P $fP s, C $fC req/s (capacity-knee amendment 1)"
+  fi
   # Amendment 2: the same window, thinned again from the full window to
   # LOAD_X x C with the same seed (time is compressed if LOAD_X x C is above
   # the window's mean rate, as in step 7 amendment 1).
@@ -125,6 +138,8 @@ PY2
   ;;
 arm)
   arm=${2:?arm: nopolicy | guardrail}; name=${3:?name}; ttl=
+  MAX_CONC=${MAX_CONC:-1}   # requests per replica (experiments/capacity-knee)
+  r0=$(restarts)
   T=$(calib T); P=$(calib P)
   model=${MODEL_NAME:-$MODEL}
   helm uninstall router -n "$NS" --wait >/dev/null 2>&1 || true
@@ -132,7 +147,7 @@ arm)
   vals=(-f "$PR/values/router.yaml" -f values/pool.yaml)
   if [ "$arm" = guardrail ]; then
     ttl=$(python3 -c "import math; print(str(math.ceil($BATCH_TTFT_X * $T)) + 's')")
-    sed "s|__BATCH_TTL__|$ttl|" values/guardrail.yaml > results/guardrail-values.yaml
+    sed -e "s|__BATCH_TTL__|$ttl|" -e "s|__MAX_CONC__|$MAX_CONC|" values/guardrail.yaml > results/guardrail-values.yaml
     vals+=(-f results/guardrail-values.yaml)
     k apply -f manifests/objectives.yaml >/dev/null
   elif [ "$arm" != nopolicy ]; then
@@ -145,18 +160,26 @@ arm)
   k rollout status deploy/router-epp --timeout=300s | tee -a "$LOG"
   sleep 15  # EPP discovers the pods and the objectives, and scrapes the pods once
   k get inferencepool,inferenceobjective -o wide 2>&1 | tee -a "$LOG" || true
-  say "arm $arm ($name): T $T s, P $P s, tenants $TENANTS${ttl:+, batch TTL $ttl}"
+  say "arm $arm ($name): T $T s, P $P s, tenants $TENANTS${ttl:+, batch TTL $ttl, maxConcurrency $MAX_CONC}"
   replay replay "results/$name.jsonl" --arm "$arm" --url http://router-epp:8081 --model "$model" \
     --schedule "/in/schedule-$TRACE.json" --ttft-slo "$T" --tpot-slo "$P" --tenants "$TENANTS"
   k logs deploy/router-epp -c epp --tail=-1 > "results/$name.epp.log" 2>&1 || true
-  printf '{"name": "%s", "arm": "%s", "T": %s, "P": %s, "batch_ttft_x": %s, "tenants": "%s"}\n' \
-    "$name" "$arm" "$T" "$P" "$BATCH_TTFT_X" "$TENANTS" > "results/$name.meta.json"
+  # Model container restarts during this rep (capacity-knee H4): the
+  # previous container's log, exit code and reason, per restarted pod.
+  r1=$(restarts)
+  [ $((r1 - r0)) -eq 0 ] || for pod in $(k get pods -l app=model -o jsonpath='{.items[*].metadata.name}'); do
+    [ "$(k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].restartCount}')" -gt 0 ] || continue
+    k get pod "$pod" -o jsonpath='{.status.containerStatuses[0].lastState.terminated}' > "results/$name.$pod.last-state.json" || true
+    k logs "$pod" --previous --tail=200 > "results/$name.$pod.prev.log" 2>&1 || true
+  done
+  printf '{"name": "%s", "arm": "%s", "T": %s, "P": %s, "batch_ttft_x": %s, "tenants": "%s", "max_conc": %s, "restarts": %s}\n' \
+    "$name" "$arm" "$T" "$P" "$BATCH_TTFT_X" "$TENANTS" "$([ "$arm" = guardrail ] && echo "$MAX_CONC" || echo null)" "$((r1 - r0))" > "results/$name.meta.json"
   python3 report.py --one "results/$name.jsonl" "results/$name.meta.json" | tee -a "$LOG"
   helm uninstall router -n "$NS" --wait >/dev/null 2>&1 || true
   ;;
 report)
   ls results/*.meta.json >/dev/null 2>&1 || { echo "no results yet"; exit 0; }
-  python3 report.py results | tee results/report.md
+  python3 report.py ${KNEE:+--knee} results | tee results/report.md
   ;;
 down)
   kind delete cluster --name "$CLUSTER"
